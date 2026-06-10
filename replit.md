@@ -1,36 +1,50 @@
-# [Project name]
+# Expense & Discipline Tracker
 
-_Replace the heading above with the project's name, and this line with one sentence describing what this app does for users._
+A mobile-first expense tracking app that answers one question every time you open it: **Am I financially safe for the rest of this month?**
 
 ## Run & Operate
 
+- `pnpm --filter @workspace/expense-tracker run dev` — run the Expo app (mobile)
 - `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
-- `pnpm --filter @workspace/api-spec run codegen` — regenerate API hooks and Zod schemas from the OpenAPI spec
-- `pnpm --filter @workspace/db run push` — push DB schema changes (dev only)
-- Required env: `DATABASE_URL` — Postgres connection string
 
 ## Stack
 
 - pnpm workspaces, Node.js 24, TypeScript 5.9
+- Mobile: Expo + React Native (Expo Router v6)
+- State: Zustand (in-memory) + AsyncStorage (persistence)
 - API: Express 5
-- DB: PostgreSQL + Drizzle ORM
-- Validation: Zod (`zod/v4`), `drizzle-zod`
-- API codegen: Orval (from OpenAPI spec)
-- Build: esbuild (CJS bundle)
+- DB: PostgreSQL + Drizzle ORM (API server)
+- Validation: Zod (`zod/v4`)
 
 ## Where things live
 
-_Populate as you build — short repo map plus pointers to the source-of-truth file for DB schema, API contracts, theme files, etc._
+- `artifacts/expense-tracker/` — Expo mobile app
+  - `lib/types.ts` — all TypeScript interfaces (Account, Transaction, Category, DisciplineState)
+  - `lib/storage.ts` — AsyncStorage persistence layer
+  - `store/useStore.ts` — Zustand store with all business logic (addIncome, addExpense, addTransfer)
+  - `utils/calculations.ts` — pure functions: calculateSafeToSpendToday, calculateDisciplineDebt
+  - `utils/month.ts` — month helpers: getDaysRemainingInMonth
+  - `utils/format.ts` — currency formatting (GHS)
+- `artifacts/api-server/` — Express API server (health check only for now)
 
 ## Architecture decisions
 
-_Populate as you build — non-obvious choices a reader couldn't infer from the code (3-5 bullets)._
+- **AsyncStorage over SQLite**: First build uses AsyncStorage (simpler, Expo Go compatible). Business logic is identical regardless of storage layer — can be migrated to SQLite later without changing store logic.
+- **Zustand as single source of truth**: All state lives in the Zustand store. Persistence is manual (load on mount, save after each mutation). No middleware.
+- **Balances are cached on accounts**: Each account stores a `balance` field updated atomically with each transaction. This avoids expensive recalculations on every render while keeping transactions as an audit trail.
+- **Discipline Debt carries forward**: `totalWithdrawnFromSavings` and `totalExtraSavings` accumulate over time and never reset. Debt = `max(0, withdrawn - extraSavings)`.
+- **10% minimum savings is hardcoded**: The savings rate is not configurable in V1 — enforced at `addIncome` validation level.
 
 ## Product
 
-_Describe the high-level user-facing capabilities of this app once they exist._
+- **Home screen**: Large Safe-to-Spend Today card with green/yellow/red color states, days remaining, discipline debt, recent transactions, FAB.
+- **Add Income**: Enforces mandatory 10% savings split between spendable and protected accounts. Extra savings auto-reduces Discipline Debt.
+- **Add Expense**: Validates spendable account, warns if expense will make safe-to-spend negative.
+- **Add Transfer**: 3 cases — spendable↔spendable (neutral), spendable→protected (optional debt repayment), protected→spendable (warning + required reason + increases Discipline Debt).
+- **Accounts**: Shows all accounts with balance, spendable vs protected split.
+- **Settings**: Savings rate display, discipline tracking stats, category CRUD.
 
 ## User preferences
 
@@ -38,8 +52,12 @@ _Populate as you build — explicit user instructions worth remembering across s
 
 ## Gotchas
 
-_Populate as you build — sharp edges, "always run X before Y" rules._
+- Always run `pnpm --filter @workspace/expense-tracker` commands from the workspace root
+- Use `restart_workflow` tool to restart the Expo workflow — never run `npx expo start` directly
+- `getSafeToSpendMetrics()` divides by daysRemaining — if called at month end on the last day it returns the full balance (correct)
+- When adding income, `savingsAmount` must be >= `amount * 0.1` — validated in store before saving
 
 ## Pointers
 
 - See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details
+- See the `expo` skill for mobile development patterns
