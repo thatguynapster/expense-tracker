@@ -89,8 +89,8 @@ export default function HomeScreen() {
           <Text style={[styles.heroStatus, { color: statusColor + 'CC' }]}>{statusText}</Text>
         </View>
 
-        {/* Metrics Row */}
-        <View style={styles.metricsRow}>
+        {/* Metrics Row 1: Days Left + Discipline Debt */}
+        <View style={[styles.metricsRow, { marginBottom: 10 }]}>
           <View style={[styles.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.metricIcon, { backgroundColor: colors.muted }]}>
               <Feather name="calendar" size={16} color={colors.primary} />
@@ -113,15 +113,20 @@ export default function HomeScreen() {
             </Text>
             <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Discipline Debt</Text>
           </View>
+        </View>
 
-          <View style={[styles.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
+        {/* Metrics Row 2: Usable Balance (full width) */}
+        <View style={[styles.metricsRow, { marginBottom: 16 }]}>
+          <View style={[styles.metricCardWide, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <View style={[styles.metricIcon, { backgroundColor: colors.muted }]}>
               <Feather name="credit-card" size={16} color={colors.primary} />
             </View>
-            <Text style={[styles.metricValue, { color: colors.foreground }]}>
-              {formatCurrencyShort(metrics.usableBalance)}
-            </Text>
-            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Usable Balance</Text>
+            <View>
+              <Text style={[styles.metricValue, { color: colors.foreground, fontSize: 18 }]}>
+                {formatCurrency(metrics.usableBalance)}
+              </Text>
+              <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Usable Balance (spendable accounts)</Text>
+            </View>
           </View>
         </View>
 
@@ -245,6 +250,15 @@ const styles = StyleSheet.create({
     padding: 14,
     alignItems: 'center',
     borderWidth: 1,
+  },
+  metricCardWide: {
+    flex: 1,
+    borderRadius: 14,
+    padding: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    gap: 12,
   },
   metricIcon: {
     width: 32,

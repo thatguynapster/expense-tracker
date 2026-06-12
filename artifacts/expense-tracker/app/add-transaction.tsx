@@ -1,18 +1,20 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  ScrollView,
   Alert,
   Platform,
+  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import DateTimePicker from '@react-native-community/datetimepicker';
+// Note: DateTimePicker only works on iOS/Android — web uses a fallback
 import { useColors } from '@/hooks/useColors';
 import { useStore } from '@/store/useStore';
 import { formatCurrency } from '@/utils/format';
@@ -20,25 +22,41 @@ import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollV
 
 type TxType = 'expense' | 'income' | 'transfer';
 
-function todayStr() {
-  return new Date().toISOString().split('T')[0]!;
+function parseLocalDate(str: string): Date {
+  const [y, m, d] = str.split('-').map(Number);
+  return new Date(y!, m! - 1, d!);
+}
+
+function formatDisplayDate(date: Date): string {
+  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+function dateToStr(date: Date): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  const d = String(date.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export default function AddTransactionScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
+  const isIOS = Platform.OS === 'ios';
+  const isAndroid = Platform.OS === 'android';
 
   const accounts = useStore((s) => s.accounts);
   const categories = useStore((s) => s.categories);
   const addIncome = useStore((s) => s.addIncome);
   const addExpense = useStore((s) => s.addExpense);
   const addTransfer = useStore((s) => s.addTransfer);
+  const disciplineDebt = useStore((s) => s.getDisciplineDebt)();
 
   const [txType, setTxType] = useState<TxType>('expense');
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(new Date());
+  const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Expense fields
@@ -71,12 +89,15 @@ export default function AddTransactionScreen() {
   const isSpendableToProtected =
     fromAccount?.type === 'spendable' && toAccount?.type === 'protected';
 
-  const disciplineDebt = useStore((s) => s.getDisciplineDebt)();
-
   const onAmountChange = (val: string) => {
     setAmount(val);
     const num = parseFloat(val) || 0;
     setSavingsAmount((num * 0.1).toFixed(2));
+  };
+
+  const handleDateChange = (_: any, selected?: Date) => {
+    if (isAndroid) setShowDatePicker(false);
+    if (selected) setDate(selected);
   };
 
   const handleSave = async () => {
@@ -85,6 +106,7 @@ export default function AddTransactionScreen() {
       return;
     }
 
+    const dateStr = dateToStr(date) + 'T00:00:00.000Z';
     setSaving(true);
     try {
       if (txType === 'expense') {
@@ -96,7 +118,7 @@ export default function AddTransactionScreen() {
           amount: amountNum,
           accountId: expAccountId,
           categoryId: expCategoryId || undefined,
-          date: date + 'T00:00:00.000Z',
+          date: dateStr,
           note: note || undefined,
         });
         if (!result.success) {
@@ -122,7 +144,7 @@ export default function AddTransactionScreen() {
           spendableAccountId: incSpendableId,
           protectedAccountId: incProtectedId,
           selectedSavingsAmount: savingsNum,
-          date: date + 'T00:00:00.000Z',
+          date: dateStr,
           note: note || undefined,
         });
         if (!result.success) {
@@ -142,7 +164,7 @@ export default function AddTransactionScreen() {
           amount: amountNum,
           fromAccountId,
           toAccountId,
-          date: date + 'T00:00:00.000Z',
+          date: dateStr,
           note: note || undefined,
           reason: reason || undefined,
           countsAsDebtRepayment: countsAsDebt,
@@ -160,17 +182,6 @@ export default function AddTransactionScreen() {
     }
   };
 
-  const handleProtectedToSpendable = () => {
-    Alert.alert(
-      'Withdraw from Protected Savings',
-      'You are withdrawing from protected savings. This will increase your Discipline Debt and should only be done intentionally.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'I understand', style: 'destructive', onPress: () => {} },
-      ]
-    );
-  };
-
   const SelectRow = ({
     label,
     value,
@@ -180,7 +191,7 @@ export default function AddTransactionScreen() {
   }: {
     label: string;
     value: string;
-    options: { id: string; name: string; subtitle?: string }[];
+    options: { id: string; name: string }[];
     onSelect: (id: string) => void;
     placeholder: string;
   }) => (
@@ -214,6 +225,34 @@ export default function AddTransactionScreen() {
         <Text style={[styles.noOptions, { color: colors.mutedForeground }]}>{placeholder}</Text>
       )}
     </View>
+  );
+
+  // iOS date picker shown inline in a modal sheet
+  const IOSDatePickerModal = () => (
+    <Modal transparent animationType="slide" visible={showDatePicker}>
+      <View style={styles.modalOverlay}>
+        <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
+            <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+              <Text style={[styles.modalCancel, { color: colors.mutedForeground }]}>Cancel</Text>
+            </TouchableOpacity>
+            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Select Date</Text>
+            <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+              <Text style={[styles.modalDone, { color: colors.primary }]}>Done</Text>
+            </TouchableOpacity>
+          </View>
+          <DateTimePicker
+            value={date}
+            mode="date"
+            display="spinner"
+            maximumDate={new Date()}
+            onChange={handleDateChange}
+            style={styles.iosPicker}
+            textColor={colors.foreground}
+          />
+        </View>
+      </View>
+    </Modal>
   );
 
   return (
@@ -392,7 +431,11 @@ export default function AddTransactionScreen() {
                 const fa = accounts.find((a) => a.id === fromAccountId);
                 const ta = accounts.find((a) => a.id === id);
                 if (fa?.type === 'protected' && ta?.type === 'spendable') {
-                  handleProtectedToSpendable();
+                  Alert.alert(
+                    'Withdraw from Protected Savings',
+                    'This will increase your Discipline Debt. Only do this intentionally.',
+                    [{ text: 'I understand' }]
+                  );
                 }
               }}
               placeholder="No accounts."
@@ -402,7 +445,7 @@ export default function AddTransactionScreen() {
               <View style={[styles.warningBanner, { backgroundColor: colors.dangerBg, borderColor: colors.danger + '40' }]}>
                 <Feather name="alert-triangle" size={16} color={colors.danger} style={{ marginRight: 8 }} />
                 <Text style={[styles.warningText, { color: colors.danger }]}>
-                  You are withdrawing from protected savings. This will increase your Discipline Debt.
+                  Withdrawing from protected savings increases your Discipline Debt.
                 </Text>
               </View>
             )}
@@ -460,7 +503,7 @@ export default function AddTransactionScreen() {
           </>
         )}
 
-        {/* Note & Date */}
+        {/* Note */}
         <View style={styles.fieldGroup}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Note (optional)</Text>
           <TextInput
@@ -472,18 +515,53 @@ export default function AddTransactionScreen() {
           />
         </View>
 
+        {/* Date Picker */}
         <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Date (YYYY-MM-DD)</Text>
-          <TextInput
-            style={[styles.textInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
-            placeholder="YYYY-MM-DD"
-            placeholderTextColor={colors.mutedForeground}
-            value={date}
-            onChangeText={setDate}
-            keyboardType="numeric"
-          />
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Date</Text>
+          <TouchableOpacity
+            style={[styles.dateButton, { backgroundColor: colors.card, borderColor: colors.border }]}
+            onPress={() => setShowDatePicker(true)}
+          >
+            <Feather name="calendar" size={16} color={colors.primary} style={{ marginRight: 10 }} />
+            <Text style={[styles.dateButtonText, { color: colors.foreground }]}>
+              {formatDisplayDate(date)}
+            </Text>
+            <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
+          </TouchableOpacity>
         </View>
+
+        {/* Android date picker renders inline when visible */}
+        {isAndroid && showDatePicker && (
+          <DateTimePicker
+            value={date}
+            mode="date"
+            display="default"
+            maximumDate={new Date()}
+            onChange={handleDateChange}
+          />
+        )}
+
+        {/* Web fallback: native HTML date input */}
+        {isWeb && showDatePicker && (
+          <View style={[styles.webDateWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <TextInput
+              style={[styles.textInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+              value={dateToStr(date)}
+              onChangeText={(v) => {
+                const d = new Date(v + 'T00:00:00');
+                if (!isNaN(d.getTime())) setDate(d);
+              }}
+              placeholder="YYYY-MM-DD"
+              placeholderTextColor={colors.mutedForeground}
+              autoFocus
+              onBlur={() => setShowDatePicker(false)}
+            />
+          </View>
+        )}
       </KeyboardAwareScrollViewCompat>
+
+      {/* iOS modal date picker */}
+      {isIOS && <IOSDatePickerModal />}
     </View>
   );
 }
@@ -507,7 +585,9 @@ const styles = StyleSheet.create({
   saveBtnText: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
   typeTabs: {
     flexDirection: 'row',
-    margin: 16,
+    marginHorizontal: 16,
+    marginTop: 16,
+    marginBottom: 16,
     borderRadius: 12,
     padding: 4,
   },
@@ -520,7 +600,13 @@ const styles = StyleSheet.create({
   typeTabText: { fontSize: 14, fontFamily: 'Inter_500Medium' },
   formContent: { paddingHorizontal: 16 },
   fieldGroup: { marginBottom: 20 },
-  fieldLabel: { fontSize: 12, fontFamily: 'Inter_600SemiBold', letterSpacing: 0.3, textTransform: 'uppercase', marginBottom: 8 },
+  fieldLabel: {
+    fontSize: 12,
+    fontFamily: 'Inter_600SemiBold',
+    letterSpacing: 0.3,
+    textTransform: 'uppercase',
+    marginBottom: 8,
+  },
   amountRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -574,6 +660,23 @@ const styles = StyleSheet.create({
     minHeight: 80,
     textAlignVertical: 'top',
   },
+  dateButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    height: 48,
+  },
+  dateButtonText: {
+    flex: 1,
+    fontSize: 15,
+    fontFamily: 'Inter_400Regular',
+  },
+  webDateWrap: {
+    marginTop: -12,
+    marginBottom: 8,
+  },
   warningBanner: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -602,4 +705,26 @@ const styles = StyleSheet.create({
   },
   debtRepayLabel: { fontSize: 14, fontFamily: 'Inter_600SemiBold', marginBottom: 2 },
   debtRepayDesc: { fontSize: 12, fontFamily: 'Inter_400Regular' },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'flex-end',
+    backgroundColor: 'rgba(0,0,0,0.4)',
+  },
+  modalSheet: {
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    paddingBottom: 34,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+  },
+  modalTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold' },
+  modalCancel: { fontSize: 15, fontFamily: 'Inter_400Regular' },
+  modalDone: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
+  iosPicker: { width: '100%' },
 });

@@ -21,6 +21,7 @@ export default function SettingsScreen() {
   const isWeb = Platform.OS === 'web';
 
   const categories = useStore((s) => s.categories);
+  const transactions = useStore((s) => s.transactions);
   const addCategory = useStore((s) => s.addCategory);
   const updateCategory = useStore((s) => s.updateCategory);
   const deleteCategory = useStore((s) => s.deleteCategory);
@@ -50,6 +51,15 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteCategory = (id: string, name: string) => {
+    const isUsed = transactions.some((tx) => tx.categoryId === id);
+    if (isUsed) {
+      Alert.alert(
+        'Cannot Delete',
+        `"${name}" cannot be deleted because it has been used in existing transactions. Remove it from those transactions first, or keep it.`,
+        [{ text: 'OK' }]
+      );
+      return;
+    }
     Alert.alert(
       'Delete Category',
       `Delete "${name}"?`,
