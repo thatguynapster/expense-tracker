@@ -6,7 +6,6 @@ import {
   StyleSheet,
   TouchableOpacity,
   TextInput,
-  Alert,
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -30,6 +29,8 @@ export default function SettingsScreen() {
   const [newCatName, setNewCatName] = useState('');
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [blockedId, setBlockedId] = useState<string | null>(null);
 
   const handleAddCategory = async () => {
     if (!newCatName.trim()) return;
@@ -39,6 +40,8 @@ export default function SettingsScreen() {
   };
 
   const handleEditCategory = (id: string, name: string) => {
+    setConfirmDeleteId(null);
+    setBlockedId(null);
     setEditingId(id);
     setEditingName(name);
   };
@@ -50,31 +53,22 @@ export default function SettingsScreen() {
     setEditingName('');
   };
 
-  const handleDeleteCategory = (id: string, name: string) => {
+  const handleDeleteTap = (id: string) => {
     const isUsed = transactions.some((tx) => tx.categoryId === id);
     if (isUsed) {
-      Alert.alert(
-        'Cannot Delete',
-        `"${name}" cannot be deleted because it has been used in existing transactions. Remove it from those transactions first, or keep it.`,
-        [{ text: 'OK' }]
-      );
-      return;
+      setBlockedId((prev) => (prev === id ? null : id));
+      setConfirmDeleteId(null);
+    } else {
+      setConfirmDeleteId((prev) => (prev === id ? null : id));
+      setBlockedId(null);
     }
-    Alert.alert(
-      'Delete Category',
-      `Delete "${name}"?`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: async () => {
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-            await deleteCategory(id);
-          },
-        },
-      ]
-    );
+    setEditingId(null);
+  };
+
+  const handleConfirmDelete = async (id: string) => {
+    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    await deleteCategory(id);
+    setConfirmDeleteId(null);
   };
 
   const topPad = isWeb ? 67 : insets.top;
@@ -162,7 +156,9 @@ export default function SettingsScreen() {
         {categories.map((cat, i) => (
           <View key={cat.id}>
             {i > 0 && <View style={[styles.divider, { backgroundColor: colors.border }]} />}
+
             {editingId === cat.id ? (
+              /* ── Edit mode ── */
               <View style={styles.editRow}>
                 <TextInput
                   style={[
@@ -183,6 +179,7 @@ export default function SettingsScreen() {
                 </TouchableOpacity>
               </View>
             ) : (
+              /* ── Normal row ── */
               <View style={styles.catRow}>
                 <Text style={[styles.catName, { color: colors.foreground }]}>{cat.name}</Text>
                 <TouchableOpacity
@@ -192,11 +189,52 @@ export default function SettingsScreen() {
                   <Feather name="edit-2" size={15} color={colors.mutedForeground} />
                 </TouchableOpacity>
                 <TouchableOpacity
-                  onPress={() => handleDeleteCategory(cat.id, cat.name)}
+                  onPress={() => handleDeleteTap(cat.id)}
                   style={styles.catAction}
                 >
-                  <Feather name="trash-2" size={15} color={colors.danger} />
+                  <Feather
+                    name="trash-2"
+                    size={15}
+                    color={confirmDeleteId === cat.id ? colors.danger : colors.danger + '99'}
+                  />
                 </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── Blocked banner (used in transactions) ── */}
+            {blockedId === cat.id && (
+              <View style={[styles.inlineBanner, { backgroundColor: colors.warningBg, borderColor: colors.warning + '50' }]}>
+                <Feather name="info" size={13} color={colors.warning} style={{ marginRight: 6, marginTop: 1 }} />
+                <Text style={[styles.inlineBannerText, { color: colors.warning }]}>
+                  <Text style={{ fontFamily: 'Inter_600SemiBold' }}>{cat.name}</Text>
+                  {' '}is used in existing transactions and cannot be deleted.
+                </Text>
+                <TouchableOpacity onPress={() => setBlockedId(null)} style={{ padding: 4 }}>
+                  <Feather name="x" size={13} color={colors.warning} />
+                </TouchableOpacity>
+              </View>
+            )}
+
+            {/* ── Confirm-delete inline panel ── */}
+            {confirmDeleteId === cat.id && (
+              <View style={[styles.confirmPanel, { backgroundColor: colors.dangerBg, borderColor: colors.danger + '40' }]}>
+                <Text style={[styles.confirmText, { color: colors.danger }]}>
+                  Delete <Text style={{ fontFamily: 'Inter_700Bold' }}>{cat.name}</Text>?
+                </Text>
+                <View style={styles.confirmActions}>
+                  <TouchableOpacity
+                    style={[styles.confirmBtn, { backgroundColor: colors.muted }]}
+                    onPress={() => setConfirmDeleteId(null)}
+                  >
+                    <Text style={[styles.confirmBtnText, { color: colors.foreground }]}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[styles.confirmBtn, { backgroundColor: colors.danger }]}
+                    onPress={() => handleConfirmDelete(cat.id)}
+                  >
+                    <Text style={[styles.confirmBtnText, { color: '#fff' }]}>Delete</Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             )}
           </View>
@@ -227,11 +265,7 @@ const styles = StyleSheet.create({
   },
   settingLabel: { fontSize: 15, fontFamily: 'Inter_600SemiBold', marginBottom: 2 },
   settingDesc: { fontSize: 12, fontFamily: 'Inter_400Regular' },
-  rateBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
+  rateBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
   rateText: { fontSize: 16, fontFamily: 'Inter_700Bold' },
   divider: { height: 1, marginVertical: 12 },
   rateNote: { fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 18 },
@@ -243,13 +277,10 @@ const styles = StyleSheet.create({
   },
   disciplineLabel: { fontSize: 13, fontFamily: 'Inter_400Regular' },
   disciplineValue: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
-  addCatRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 12,
-  },
+  addCatRow: { flexDirection: 'row', gap: 10, marginBottom: 12 },
   catInput: {
     flex: 1,
+    minWidth: 0,
     height: 40,
     borderRadius: 10,
     borderWidth: 1,
@@ -264,12 +295,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
-  catRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 6 },
+  catRow: { flexDirection: 'row', alignItems: 'center', paddingVertical: 8 },
   catName: { flex: 1, fontSize: 14, fontFamily: 'Inter_400Regular' },
-  catAction: { padding: 6 },
+  catAction: { padding: 8 },
   editRow: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 4 },
   editInput: {
     flex: 1,
+    minWidth: 0,
     height: 38,
     borderRadius: 8,
     borderWidth: 1.5,
@@ -278,4 +310,45 @@ const styles = StyleSheet.create({
     fontFamily: 'Inter_400Regular',
   },
   editAction: { padding: 6 },
+  inlineBanner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    padding: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  inlineBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    lineHeight: 17,
+  },
+  confirmPanel: {
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    marginTop: 6,
+    marginBottom: 4,
+  },
+  confirmText: {
+    fontSize: 13,
+    fontFamily: 'Inter_400Regular',
+    marginBottom: 10,
+  },
+  confirmActions: {
+    flexDirection: 'row',
+    gap: 8,
+    justifyContent: 'flex-end',
+  },
+  confirmBtn: {
+    paddingHorizontal: 16,
+    paddingVertical: 7,
+    borderRadius: 8,
+  },
+  confirmBtnText: {
+    fontSize: 13,
+    fontFamily: 'Inter_600SemiBold',
+  },
 });

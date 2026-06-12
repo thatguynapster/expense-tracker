@@ -90,8 +90,10 @@ export default function AddTransactionScreen() {
     fromAccount?.type === 'spendable' && toAccount?.type === 'protected';
 
   const onAmountChange = (val: string) => {
-    setAmount(val);
-    const num = parseFloat(val) || 0;
+    // strip anything that's not a digit or decimal point
+    const clean = val.replace(/[^0-9.]/g, '');
+    setAmount(clean);
+    const num = parseFloat(clean) || 0;
     setSavingsAmount((num * 0.1).toFixed(2));
   };
 
@@ -322,7 +324,6 @@ export default function AddTransactionScreen() {
               keyboardType="decimal-pad"
               value={amount}
               onChangeText={onAmountChange}
-              autoFocus
             />
           </View>
         </View>
@@ -616,7 +617,7 @@ const styles = StyleSheet.create({
     height: 56,
   },
   currencyPrefix: { fontSize: 18, fontFamily: 'Inter_500Medium', marginRight: 8 },
-  amountInput: { flex: 1, fontSize: 28, fontFamily: 'Inter_600SemiBold' },
+  amountInput: { flex: 1, minWidth: 0, fontSize: 28, fontFamily: 'Inter_600SemiBold' },
   optionList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   optionChip: {
     paddingHorizontal: 14,
