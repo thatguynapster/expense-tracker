@@ -7,15 +7,13 @@ import {
   TextInput,
   Alert,
   Platform,
-  Modal,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import DateTimePicker from '@react-native-community/datetimepicker';
-// Note: DateTimePicker only works on iOS/Android — web uses a fallback
 import { useColors } from '@/hooks/useColors';
+import { CalendarPicker } from '@/components/CalendarPicker';
 import { useStore } from '@/store/useStore';
 import { formatCurrency } from '@/utils/format';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
@@ -42,9 +40,6 @@ export default function AddTransactionScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
-  const isIOS = Platform.OS === 'ios';
-  const isAndroid = Platform.OS === 'android';
-
   const accounts = useStore((s) => s.accounts);
   const categories = useStore((s) => s.categories);
   const addIncome = useStore((s) => s.addIncome);
@@ -56,7 +51,6 @@ export default function AddTransactionScreen() {
   const [amount, setAmount] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState(new Date());
-  const [showDatePicker, setShowDatePicker] = useState(false);
   const [saving, setSaving] = useState(false);
 
   // Expense fields
@@ -95,11 +89,6 @@ export default function AddTransactionScreen() {
     setAmount(clean);
     const num = parseFloat(clean) || 0;
     setSavingsAmount((num * 0.1).toFixed(2));
-  };
-
-  const handleDateChange = (_: any, selected?: Date) => {
-    if (isAndroid) setShowDatePicker(false);
-    if (selected) setDate(selected);
   };
 
   const handleSave = async () => {
@@ -227,34 +216,6 @@ export default function AddTransactionScreen() {
         <Text style={[styles.noOptions, { color: colors.mutedForeground }]}>{placeholder}</Text>
       )}
     </View>
-  );
-
-  // iOS date picker shown inline in a modal sheet
-  const IOSDatePickerModal = () => (
-    <Modal transparent animationType="slide" visible={showDatePicker}>
-      <View style={styles.modalOverlay}>
-        <View style={[styles.modalSheet, { backgroundColor: colors.card }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-              <Text style={[styles.modalCancel, { color: colors.mutedForeground }]}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.foreground }]}>Select Date</Text>
-            <TouchableOpacity onPress={() => setShowDatePicker(false)}>
-              <Text style={[styles.modalDone, { color: colors.primary }]}>Done</Text>
-            </TouchableOpacity>
-          </View>
-          <DateTimePicker
-            value={date}
-            mode="date"
-            display="spinner"
-            maximumDate={new Date()}
-            onChange={handleDateChange}
-            style={styles.iosPicker}
-            textColor={colors.foreground}
-          />
-        </View>
-      </View>
-    </Modal>
   );
 
   return (
@@ -519,50 +480,13 @@ export default function AddTransactionScreen() {
         {/* Date Picker */}
         <View style={styles.fieldGroup}>
           <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Date</Text>
-          <TouchableOpacity
-            style={[styles.dateButton, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => setShowDatePicker(true)}
-          >
-            <Feather name="calendar" size={16} color={colors.primary} style={{ marginRight: 10 }} />
-            <Text style={[styles.dateButtonText, { color: colors.foreground }]}>
-              {formatDisplayDate(date)}
-            </Text>
-            <Feather name="chevron-down" size={16} color={colors.mutedForeground} />
-          </TouchableOpacity>
-        </View>
-
-        {/* Android date picker renders inline when visible */}
-        {isAndroid && showDatePicker && (
-          <DateTimePicker
+          <CalendarPicker
             value={date}
-            mode="date"
-            display="default"
+            onChange={setDate}
             maximumDate={new Date()}
-            onChange={handleDateChange}
           />
-        )}
-
-        {/* Web fallback: native HTML date input */}
-        {isWeb && showDatePicker && (
-          <View style={[styles.webDateWrap, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <TextInput
-              style={[styles.textInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
-              value={dateToStr(date)}
-              onChangeText={(v) => {
-                const d = new Date(v + 'T00:00:00');
-                if (!isNaN(d.getTime())) setDate(d);
-              }}
-              placeholder="YYYY-MM-DD"
-              placeholderTextColor={colors.mutedForeground}
-              autoFocus
-              onBlur={() => setShowDatePicker(false)}
-            />
-          </View>
-        )}
+        </View>
       </KeyboardAwareScrollViewCompat>
-
-      {/* iOS modal date picker */}
-      {isIOS && <IOSDatePickerModal />}
     </View>
   );
 }
@@ -706,26 +630,4 @@ const styles = StyleSheet.create({
   },
   debtRepayLabel: { fontSize: 14, fontFamily: 'Inter_600SemiBold', marginBottom: 2 },
   debtRepayDesc: { fontSize: 12, fontFamily: 'Inter_400Regular' },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'flex-end',
-    backgroundColor: 'rgba(0,0,0,0.4)',
-  },
-  modalSheet: {
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingBottom: 34,
-  },
-  modalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-    borderBottomWidth: 1,
-  },
-  modalTitle: { fontSize: 16, fontFamily: 'Inter_600SemiBold' },
-  modalCancel: { fontSize: 15, fontFamily: 'Inter_400Regular' },
-  modalDone: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
-  iosPicker: { width: '100%' },
 });
