@@ -5,7 +5,6 @@ A mobile-first expense tracking app that answers one question every time you ope
 ## Run & Operate
 
 - `pnpm --filter @workspace/expense-tracker run dev` — run the Expo app (mobile)
-- `pnpm --filter @workspace/api-server run dev` — run the API server (port 5000)
 - `pnpm run typecheck` — full typecheck across all packages
 - `pnpm run build` — typecheck + build all packages
 
@@ -14,9 +13,8 @@ A mobile-first expense tracking app that answers one question every time you ope
 - pnpm workspaces, Node.js 24, TypeScript 5.9
 - Mobile: Expo + React Native (Expo Router v6)
 - State: Zustand (in-memory) + AsyncStorage (persistence)
-- API: Express 5
-- DB: PostgreSQL + Drizzle ORM (API server)
 - Validation: Zod (`zod/v4`)
+- Cloud sync backend (`folio-server/`, Next.js + MongoDB via Prisma) lives outside this repo — see `docs/PRD_REVIEW_TASKS.md` Priority 1 for details. It's a separate, gitignored project, not a pnpm workspace member.
 
 ## Where things live
 
@@ -27,7 +25,8 @@ A mobile-first expense tracking app that answers one question every time you ope
   - `utils/calculations.ts` — pure functions: calculateSafeToSpendToday, calculateDisciplineDebt
   - `utils/month.ts` — month helpers: getDaysRemainingInMonth
   - `utils/format.ts` — currency formatting (GHS)
-- `artifacts/api-server/` — Express API server (health check only for now)
+  - `utils/sync.ts` — pure delta-sync diffing logic (collectDirtyRecords, applyPushResult, applyPullResult)
+  - `lib/syncApi.ts` — network client for folio-server's `/api/sync` endpoint
 
 ## Architecture decisions
 

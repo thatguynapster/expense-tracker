@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { loadAppData, saveAppData } from '@/lib/storage';
+import { isFirstLaunch, loadAppData, saveAppData } from '@/lib/storage';
+import { pullFromServer, pushToServer } from '@/lib/syncApi';
 import type {
   Account,
   Category,
@@ -9,6 +10,7 @@ import type {
   SafeToSpendStatus,
 } from '@/lib/types';
 import { calculateSafeToSpendToday, calculateDisciplineDebt, getSafeToSpendStatus } from '@/utils/calculations';
+import { applyPullResult, applyPushResult, collectDirtyRecords, hasDirtyRecords } from '@/utils/sync';
 
 const genId = (): string =>
   Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -64,6 +66,14 @@ interface AppStore {
   getSafeToSpendMetrics: () => SafeToSpendMetrics;
   getDisciplineDebt: () => number;
   getSafeToSpendStatus: () => SafeToSpendStatus;
+
+  /**
+   * Pushes any locally dirty records (syncedAt: null) to the server. A
+   * best-effort background operation — failures (offline, server down,
+   * not configured) are swallowed so they never surface as a UI error;
+   * records simply stay dirty and get retried on the next mutation.
+   */
+  syncNow: () => Promise<void>;
 }
 
 const persist = async (data: {
@@ -90,10 +100,13 @@ export const useStore = create<AppStore>((set, get) => ({
     totalExtraSavings: 0,
     createdAt: now(),
     updatedAt: now(),
+    syncedAt: null,
+    deletedAt: null,
   },
   isLoaded: false,
 
   loadData: async () => {
+    const fresh = await isFirstLaunch();
     const data = await loadAppData();
     set({
       accounts: data.accounts,
@@ -102,6 +115,18 @@ export const useStore = create<AppStore>((set, get) => ({
       disciplineState: data.disciplineState,
       isLoaded: true,
     });
+
+    // Fresh install / new device: nothing local yet, so try restoring from
+    // the server. A no-op if sync isn't configured or the server has
+    // nothing either — the freshly-seeded local defaults stand as-is.
+    if (fresh) {
+      const pulled = await pullFromServer();
+      if (pulled) {
+        const restored = applyPullResult(pulled, now(), get().disciplineState);
+        set(restored);
+        await saveAppData(restored);
+      }
+    }
   },
 
   addAccount: async (name, type, initialBalance = 0) => {
@@ -112,18 +137,22 @@ export const useStore = create<AppStore>((set, get) => ({
       balance: initialBalance,
       createdAt: now(),
       updatedAt: now(),
+      syncedAt: null,
+      deletedAt: null,
     };
     const accounts = [...get().accounts, account];
     set({ accounts });
     await persist({ ...get(), accounts });
+    void get().syncNow();
   },
 
   updateAccount: async (id, name) => {
     const accounts = get().accounts.map((a) =>
-      a.id === id ? { ...a, name, updatedAt: now() } : a
+      a.id === id ? { ...a, name, updatedAt: now(), syncedAt: null } : a
     );
     set({ accounts });
     await persist({ ...get(), accounts });
+    void get().syncNow();
   },
 
   addCategory: async (name, monthlyBudget) => {
@@ -133,24 +162,35 @@ export const useStore = create<AppStore>((set, get) => ({
       monthlyBudget: monthlyBudget ?? null,
       createdAt: now(),
       updatedAt: now(),
+      syncedAt: null,
+      deletedAt: null,
     };
     const categories = [...get().categories, category];
     set({ categories });
     await persist({ ...get(), categories });
+    void get().syncNow();
   },
 
   updateCategory: async (id, name, monthlyBudget) => {
     const categories = get().categories.map((c) =>
-      c.id === id ? { ...c, name, monthlyBudget: monthlyBudget ?? null, updatedAt: now() } : c
+      c.id === id ? { ...c, name, monthlyBudget: monthlyBudget ?? null, updatedAt: now(), syncedAt: null } : c
     );
     set({ categories });
     await persist({ ...get(), categories });
+    void get().syncNow();
   },
 
   deleteCategory: async (id) => {
-    const categories = get().categories.filter((c) => c.id !== id);
+    // Soft delete: the record stays locally (marked deletedAt + dirty) until
+    // a successful sync confirms the server has deleted its copy too, at
+    // which point it's purged from local storage entirely. UI-facing reads
+    // of `categories` must filter out `deletedAt !== null` themselves.
+    const categories = get().categories.map((c) =>
+      c.id === id ? { ...c, deletedAt: now(), updatedAt: now(), syncedAt: null } : c
+    );
     set({ categories });
     await persist({ ...get(), categories });
+    void get().syncNow();
   },
 
   addIncome: async (p) => {
@@ -179,11 +219,13 @@ export const useStore = create<AppStore>((set, get) => ({
       note: note ?? null,
       createdAt: now(),
       updatedAt: now(),
+      syncedAt: null,
+      deletedAt: null,
     };
 
     const accounts = get().accounts.map((a) => {
-      if (a.id === spendableAccountId) return { ...a, balance: a.balance + spendableAmount, updatedAt: now() };
-      if (a.id === protectedAccountId) return { ...a, balance: a.balance + selectedSavingsAmount, updatedAt: now() };
+      if (a.id === spendableAccountId) return { ...a, balance: a.balance + spendableAmount, updatedAt: now(), syncedAt: null };
+      if (a.id === protectedAccountId) return { ...a, balance: a.balance + selectedSavingsAmount, updatedAt: now(), syncedAt: null };
       return a;
     });
 
@@ -191,11 +233,13 @@ export const useStore = create<AppStore>((set, get) => ({
       ...get().disciplineState,
       totalExtraSavings: get().disciplineState.totalExtraSavings + extraSavings,
       updatedAt: now(),
+      syncedAt: null,
     };
 
     const transactions = [...get().transactions, transaction];
     set({ accounts, transactions, disciplineState });
     await persist({ ...get(), accounts, transactions, disciplineState });
+    void get().syncNow();
 
     return { success: true };
   },
@@ -227,14 +271,17 @@ export const useStore = create<AppStore>((set, get) => ({
       note: note ?? null,
       createdAt: now(),
       updatedAt: now(),
+      syncedAt: null,
+      deletedAt: null,
     };
 
     const accounts = get().accounts.map((a) =>
-      a.id === accountId ? { ...a, balance: newBalance, updatedAt: now() } : a
+      a.id === accountId ? { ...a, balance: newBalance, updatedAt: now(), syncedAt: null } : a
     );
     const transactions = [...get().transactions, transaction];
     set({ accounts, transactions });
     await persist({ ...get(), accounts, transactions });
+    void get().syncNow();
 
     const willGoDanger = metrics.safeToSpendToday <= 0;
     return { success: true, willGoDanger };
@@ -267,32 +314,39 @@ export const useStore = create<AppStore>((set, get) => ({
       countsAsDebtRepayment: countsAsDebtRepayment ?? false,
       createdAt: now(),
       updatedAt: now(),
+      syncedAt: null,
+      deletedAt: null,
     };
 
     const accounts = get().accounts.map((a) => {
-      if (a.id === fromAccountId) return { ...a, balance: a.balance - amount, updatedAt: now() };
-      if (a.id === toAccountId) return { ...a, balance: a.balance + amount, updatedAt: now() };
+      if (a.id === fromAccountId) return { ...a, balance: a.balance - amount, updatedAt: now(), syncedAt: null };
+      if (a.id === toAccountId) return { ...a, balance: a.balance + amount, updatedAt: now(), syncedAt: null };
       return a;
     });
 
-    let disciplineState = { ...get().disciplineState };
+    // Only mark disciplineState dirty when a branch below actually changes
+    // it — an untouched copy shouldn't get pushed to the server.
+    let disciplineState = get().disciplineState;
     if (isProtectedToSpendable) {
       disciplineState = {
         ...disciplineState,
         totalWithdrawnFromSavings: disciplineState.totalWithdrawnFromSavings + amount,
         updatedAt: now(),
+        syncedAt: null,
       };
     } else if (fromAccount.type === 'spendable' && toAccount.type === 'protected' && countsAsDebtRepayment) {
       disciplineState = {
         ...disciplineState,
         totalExtraSavings: disciplineState.totalExtraSavings + amount,
         updatedAt: now(),
+        syncedAt: null,
       };
     }
 
     const transactions = [...get().transactions, transaction];
     set({ accounts, transactions, disciplineState });
     await persist({ ...get(), accounts, transactions, disciplineState });
+    void get().syncNow();
 
     return { success: true };
   },
@@ -308,5 +362,17 @@ export const useStore = create<AppStore>((set, get) => ({
   getSafeToSpendStatus: () => {
     const { safeToSpendToday } = calculateSafeToSpendToday(get().accounts);
     return getSafeToSpendStatus(safeToSpendToday);
+  },
+
+  syncNow: async () => {
+    const payload = collectDirtyRecords(get());
+    if (!hasDirtyRecords(payload)) return;
+
+    const success = await pushToServer(payload);
+    if (!success) return;
+
+    const updated = applyPushResult(get(), payload, now());
+    set(updated);
+    await persist({ ...get(), ...updated });
   },
 }));

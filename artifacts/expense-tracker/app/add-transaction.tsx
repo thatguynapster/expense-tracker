@@ -41,7 +41,9 @@ export default function AddTransactionScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
   const accounts = useStore((s) => s.accounts);
-  const categories = useStore((s) => s.categories);
+  // Soft-deleted categories stay in local storage until sync purges them —
+  // filter them out of the picker.
+  const categories = useStore((s) => s.categories).filter((c) => !c.deletedAt);
   const addIncome = useStore((s) => s.addIncome);
   const addExpense = useStore((s) => s.addExpense);
   const addTransfer = useStore((s) => s.addTransfer);

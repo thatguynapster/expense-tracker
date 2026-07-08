@@ -9,6 +9,10 @@ export interface Account {
   balance: number;
   createdAt: string;
   updatedAt: string;
+  /** null = not yet synced to the server; set to the timestamp of the last successful sync. */
+  syncedAt: string | null;
+  /** null = active; set to a timestamp when soft-deleted (tombstone for delta sync). */
+  deletedAt: string | null;
 }
 
 export interface Category {
@@ -17,6 +21,10 @@ export interface Category {
   monthlyBudget?: number | null;
   createdAt: string;
   updatedAt: string;
+  /** null = not yet synced to the server; set to the timestamp of the last successful sync. */
+  syncedAt: string | null;
+  /** null = active; set to a timestamp when soft-deleted (tombstone for delta sync). */
+  deletedAt: string | null;
 }
 
 export interface Transaction {
@@ -34,6 +42,10 @@ export interface Transaction {
   countsAsDebtRepayment?: boolean;
   createdAt: string;
   updatedAt: string;
+  /** null = not yet synced to the server; set to the timestamp of the last successful sync. */
+  syncedAt: string | null;
+  /** null = active; set to a timestamp when soft-deleted (tombstone for delta sync). */
+  deletedAt: string | null;
 }
 
 export interface DisciplineState {
@@ -42,6 +54,10 @@ export interface DisciplineState {
   totalExtraSavings: number;
   createdAt: string;
   updatedAt: string;
+  /** null = not yet synced to the server; set to the timestamp of the last successful sync. */
+  syncedAt: string | null;
+  /** null = active; set to a timestamp when soft-deleted (tombstone for delta sync). Not expected to ever be set in practice — no feature deletes discipline state. */
+  deletedAt: string | null;
 }
 
 export interface AppData {

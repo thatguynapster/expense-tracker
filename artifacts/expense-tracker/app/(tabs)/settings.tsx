@@ -19,7 +19,10 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
 
-  const categories = useStore((s) => s.categories);
+  const allCategories = useStore((s) => s.categories);
+  // Soft-deleted categories stay in local storage until a sync confirms the
+  // server has deleted its copy too — filter them out of what's displayed.
+  const categories = allCategories.filter((c) => !c.deletedAt);
   const transactions = useStore((s) => s.transactions);
   const addCategory = useStore((s) => s.addCategory);
   const updateCategory = useStore((s) => s.updateCategory);
@@ -219,7 +222,7 @@ export default function SettingsScreen() {
             {confirmDeleteId === cat.id && (
               <View style={[styles.confirmPanel, { backgroundColor: colors.dangerBg, borderColor: colors.danger + '40' }]}>
                 <Text style={[styles.confirmText, { color: colors.danger }]}>
-                  Delete <Text style={{ fontFamily: 'Inter_700Bold' }}>{cat.name}</Text>?
+                  Delete <Text style={{ fontFamily: 'Inter_700Bold' }}>{cat.name}</Text>? This action is permanent and cannot be undone.
                 </Text>
                 <View style={styles.confirmActions}>
                   <TouchableOpacity
