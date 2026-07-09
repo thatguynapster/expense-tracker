@@ -1,8 +1,0 @@
-uploads = []
-outputs = []
-
-[[generated]]
-id = "HLuXuXAdnLkUBDBsYaNB6"
-uri = "file://artifacts/expense-tracker/assets/images/icon.png"
-type = "image"
-title = "generated_image"
