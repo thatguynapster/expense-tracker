@@ -41,3 +41,6 @@ example
 # generated native folders
 /ios
 /android
+
+# folio-server: standalone Next.js sync backend, deliberately kept out of this repo
+/folio-server
