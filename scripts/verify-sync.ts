@@ -11,9 +11,9 @@
  */
 process.loadEnvFile('.env');
 
-import { applyPullResult, applyPushResult, collectDirtyRecords, hasDirtyRecords } from '../src/utils/sync';
+import { applyPullResult, applyPushResult, collectDirtyRecords, hasDirtyRecords, type SyncedAppData } from '../src/utils/sync';
 import { pullFromServer, pushToServer } from '../src/lib/syncApi';
-import type { Account, AppData, Category } from '../src/lib/types';
+import type { Account, Category, Loan, LoanPayment } from '../src/lib/types';
 
 function assert(condition: boolean, message: string): void {
   if (!condition) throw new Error(`FAILED: ${message}`);
@@ -24,7 +24,7 @@ const now = () => new Date().toISOString();
 
 async function main() {
   console.log('1. Simulating a fresh-install AppData with dirty seed data...');
-  const testData: AppData = {
+  const testData: SyncedAppData = {
     accounts: [
       { id: 'acc_verify_1', name: 'Verify Salary', type: 'spendable', balance: 500, createdAt: now(), updatedAt: now(), syncedAt: null, deletedAt: null },
     ],
@@ -33,12 +33,21 @@ async function main() {
     ],
     transactions: [],
     disciplineState: { id: 'discipline_verify_test', totalWithdrawnFromSavings: 0, totalExtraSavings: 0, createdAt: now(), updatedAt: now(), syncedAt: null, deletedAt: null },
+    loans: [
+      { id: 'loan_verify_1', borrowerName: 'Verify Borrower', principal: 200, dateLent: now(), expectedRepaymentDate: null, note: null, sourceAccountId: 'acc_verify_1', settledAt: null, createdAt: now(), updatedAt: now(), syncedAt: null, deletedAt: null },
+    ],
+    loanPayments: [
+      { id: 'pay_verify_1', loanId: 'loan_verify_1', amount: 50, date: now(), destinationAccountId: 'acc_verify_1', note: null, createdAt: now(), updatedAt: now(), syncedAt: null, deletedAt: null },
+    ],
   };
 
   console.log('2. collectDirtyRecords()...');
   const dirty = collectDirtyRecords(testData);
   assert(hasDirtyRecords(dirty), 'dirty payload is non-empty');
-  assert(dirty.accounts.length === 1 && dirty.categories.length === 1, 'exactly the seeded records are dirty');
+  assert(
+    dirty.accounts.length === 1 && dirty.categories.length === 1 && dirty.loans.length === 1 && dirty.loanPayments.length === 1,
+    'exactly the seeded records are dirty (including the loan and its payment)',
+  );
 
   console.log('3. pushToServer() — real network call...');
   const pushed = await pushToServer(dirty);
@@ -49,25 +58,34 @@ async function main() {
   assert(pulled !== null, 'pull returned data (not null)');
   assert(pulled!.accounts.some((a: Account) => a.id === 'acc_verify_1'), 'pushed account is visible via pull');
   assert(pulled!.categories.some((c: Category) => c.id === 'cat_verify_1'), 'pushed category is visible via pull');
+  assert(pulled!.loans.some((l: Loan) => l.id === 'loan_verify_1'), 'pushed loan is visible via pull');
+  assert(pulled!.loanPayments.some((p: LoanPayment) => p.id === 'pay_verify_1'), 'pushed loan payment is visible via pull');
 
   console.log('5. applyPullResult() — reconstructing local AppData from the pull...');
   const restored = applyPullResult(pulled!, now(), testData.disciplineState);
   assert(restored.accounts.every((a: Account) => a.syncedAt !== null), 'every restored account is marked synced');
   assert(restored.accounts.find((a: Account) => a.id === 'acc_verify_1') !== undefined, 'restored AppData contains the test account');
+  assert(restored.loans.find((l: Loan) => l.id === 'loan_verify_1') !== undefined, 'restored AppData contains the test loan — this is the exact fresh-install path that previously lost loans');
+  assert(restored.loanPayments.find((p: LoanPayment) => p.id === 'pay_verify_1') !== undefined, 'restored AppData contains the test loan payment');
 
   console.log('6. applyPushResult() — simulating the local reconciliation step after a push...');
   const reconciled = applyPushResult(testData, dirty, now());
   assert(reconciled.accounts.find((a: Account) => a.id === 'acc_verify_1')?.syncedAt !== null, 'pushed account marked synced locally');
+  assert(reconciled.loans.find((l: Loan) => l.id === 'loan_verify_1')?.syncedAt !== null, 'pushed loan marked synced locally');
 
   console.log('7. Cleaning up — soft-deleting test records and pushing the tombstones...');
   const tombstoneAccount = { ...testData.accounts[0]!, deletedAt: now(), syncedAt: null };
   const tombstoneCategory = { ...testData.categories[0]!, deletedAt: now(), syncedAt: null };
   const tombstoneDisciplineState = { ...testData.disciplineState, deletedAt: now(), syncedAt: null };
+  const tombstoneLoan = { ...testData.loans[0]!, deletedAt: now(), syncedAt: null };
+  const tombstoneLoanPayment = { ...testData.loanPayments[0]!, deletedAt: now(), syncedAt: null };
   const cleanupPush = await pushToServer({
     accounts: [tombstoneAccount],
     categories: [tombstoneCategory],
     transactions: [],
     disciplineState: tombstoneDisciplineState,
+    loans: [tombstoneLoan],
+    loanPayments: [tombstoneLoanPayment],
   });
   assert(cleanupPush === true, 'cleanup push (tombstones) succeeded');
 
@@ -77,6 +95,8 @@ async function main() {
   assert(!finalPull!.accounts.some((a: Account) => a.id === 'acc_verify_1'), 'test account is gone from the server');
   assert(finalPull!.disciplineState === null, 'test disciplineState is gone from the server');
   assert(!finalPull!.categories.some((c: Category) => c.id === 'cat_verify_1'), 'test category is gone from the server');
+  assert(!finalPull!.loans.some((l: Loan) => l.id === 'loan_verify_1'), 'test loan is gone from the server');
+  assert(!finalPull!.loanPayments.some((p: LoanPayment) => p.id === 'pay_verify_1'), 'test loan payment is gone from the server');
 
   console.log('\nAll sync module functions verified against the live server. Cleaned up successfully.');
 }

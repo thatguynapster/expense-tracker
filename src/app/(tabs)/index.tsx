@@ -16,6 +16,7 @@ import { useColors } from '@/hooks/useColors';
 import { useStore } from '@/store/useStore';
 import { TransactionItem } from '@/components/TransactionItem';
 import { formatCurrency, formatCurrencyShort } from '@/utils/format';
+import { getLoansSummary } from '@/utils/calculations';
 
 export default function HomeScreen() {
   const colors = useColors();
@@ -25,6 +26,8 @@ export default function HomeScreen() {
   const accounts = useStore((s) => s.accounts);
   const transactions = useStore((s) => s.transactions);
   const categories = useStore((s) => s.categories);
+  const loans = useStore((s) => s.loans);
+  const loanPayments = useStore((s) => s.loanPayments);
   const getSafeToSpendMetrics = useStore((s) => s.getSafeToSpendMetrics);
   const getDisciplineDebt = useStore((s) => s.getDisciplineDebt);
   const getSafeToSpendStatus = useStore((s) => s.getSafeToSpendStatus);
@@ -32,6 +35,7 @@ export default function HomeScreen() {
   const metrics = getSafeToSpendMetrics();
   const disciplineDebt = getDisciplineDebt();
   const status = getSafeToSpendStatus();
+  const loansSummary = getLoansSummary(loans, loanPayments);
 
   const recentTransactions = [...transactions]
     .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
@@ -141,6 +145,44 @@ export default function HomeScreen() {
               </Text>
             </View>
           </View>
+        )}
+
+        {/* Loans Summary */}
+        {loansSummary.borrowerCount > 0 && (
+          <TouchableOpacity
+            style={[
+              styles.loansSummaryCard,
+              {
+                backgroundColor: loansSummary.overdueCount > 0 ? colors.warningBg : colors.card,
+                borderColor: loansSummary.overdueCount > 0 ? colors.warning + '40' : colors.border,
+              },
+            ]}
+            onPress={() => router.push('/(tabs)/loans')}
+            activeOpacity={0.8}
+          >
+            <View style={[styles.loansSummaryIcon, { backgroundColor: colors.muted }]}>
+              <Feather
+                name="dollar-sign"
+                size={18}
+                color={loansSummary.overdueCount > 0 ? colors.warning : colors.primary}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={[
+                styles.loansSummaryTitle,
+                { color: loansSummary.overdueCount > 0 ? colors.warning : colors.foreground },
+              ]}>
+                You are owed {formatCurrency(loansSummary.totalOutstanding)}
+              </Text>
+              <Text style={[styles.loansSummaryDesc, { color: colors.mutedForeground }]}>
+                Across {loansSummary.borrowerCount} borrower{loansSummary.borrowerCount === 1 ? '' : 's'}
+                {loansSummary.overdueCount > 0
+                  ? ` · ${loansSummary.overdueCount} overdue`
+                  : ''}
+              </Text>
+            </View>
+            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
+          </TouchableOpacity>
         )}
 
         {/* Recent Transactions */}
@@ -295,6 +337,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: 'Inter_400Regular',
     lineHeight: 17,
+  },
+  loansSummaryCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    marginBottom: 16,
+    gap: 12,
+  },
+  loansSummaryIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loansSummaryTitle: {
+    fontSize: 14,
+    fontFamily: 'Inter_600SemiBold',
+    marginBottom: 2,
+  },
+  loansSummaryDesc: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
   },
   sectionHeader: {
     flexDirection: 'row',

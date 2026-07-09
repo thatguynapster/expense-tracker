@@ -7,6 +7,8 @@ const emptyPayload: SyncPayload = {
   categories: [],
   transactions: [],
   disciplineState: null,
+  loans: [],
+  loanPayments: [],
 };
 
 const dirtyAccount = {
@@ -77,6 +79,8 @@ describe('pushToServer / pullFromServer', () => {
         categories: [],
         transactions: [],
         disciplineState: null,
+        loans: [],
+        loanPayments: [],
       });
 
       const [, options] = fetchSpy.mock.calls[0];

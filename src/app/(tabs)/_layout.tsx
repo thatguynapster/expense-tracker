@@ -25,6 +25,10 @@ function NativeTabLayout() {
         <NativeTabs.Trigger.Icon sf={{ default: "creditcard", selected: "creditcard.fill" }} />
         <NativeTabs.Trigger.Label>Accounts</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
+      <NativeTabs.Trigger name="loans">
+        <NativeTabs.Trigger.Icon sf={{ default: "banknote", selected: "banknote.fill" }} />
+        <NativeTabs.Trigger.Label>Loans</NativeTabs.Trigger.Label>
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <NativeTabs.Trigger.Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
         <NativeTabs.Trigger.Label>Settings</NativeTabs.Trigger.Label>
@@ -103,6 +107,18 @@ function ClassicTabLayout() {
               <SymbolView name="creditcard" tintColor={color} size={22} />
             ) : (
               <Feather name="credit-card" size={22} color={color} />
+            ),
+        }}
+      />
+      <Tabs.Screen
+        name="loans"
+        options={{
+          title: "Loans",
+          tabBarIcon: ({ color }) =>
+            isIOS ? (
+              <SymbolView name="banknote" tintColor={color} size={22} />
+            ) : (
+              <Feather name="dollar-sign" size={22} color={color} />
             ),
         }}
       />

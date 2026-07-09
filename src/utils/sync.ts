@@ -1,4 +1,20 @@
-import type { Account, AppData, Category, DisciplineState, Transaction } from '@/lib/types';
+import type { Account, Category, DisciplineState, Loan, LoanPayment, Transaction } from '@/lib/types';
+
+/**
+ * The subset of AppData that participates in cloud sync. This is all six
+ * collections — loans and loan payments included, since a loan's principal
+ * debits an account balance (a synced field), so leaving them local-only
+ * would silently desync a fresh install: the balance would restore, but the
+ * ledger explaining where the money went would not.
+ */
+export type SyncedAppData = {
+  accounts: Account[];
+  categories: Category[];
+  transactions: Transaction[];
+  disciplineState: DisciplineState;
+  loans: Loan[];
+  loanPayments: LoanPayment[];
+};
 
 /**
  * The sync push payload: only the records considered dirty locally
@@ -11,14 +27,18 @@ export type SyncPayload = {
   categories: Category[];
   transactions: Transaction[];
   disciplineState: DisciplineState | null;
+  loans: Loan[];
+  loanPayments: LoanPayment[];
 };
 
-export function collectDirtyRecords(data: AppData): SyncPayload {
+export function collectDirtyRecords(data: SyncedAppData): SyncPayload {
   return {
     accounts: data.accounts.filter((a) => a.syncedAt === null),
     categories: data.categories.filter((c) => c.syncedAt === null),
     transactions: data.transactions.filter((t) => t.syncedAt === null),
     disciplineState: data.disciplineState.syncedAt === null ? data.disciplineState : null,
+    loans: data.loans.filter((l) => l.syncedAt === null),
+    loanPayments: data.loanPayments.filter((p) => p.syncedAt === null),
   };
 }
 
@@ -33,6 +53,8 @@ export type WirePayload = {
   categories: Omit<Category, 'syncedAt'>[];
   transactions: Omit<Transaction, 'syncedAt'>[];
   disciplineState: Omit<DisciplineState, 'syncedAt'> | null;
+  loans: Omit<Loan, 'syncedAt'>[];
+  loanPayments: Omit<LoanPayment, 'syncedAt'>[];
 };
 
 function stripSyncedAt<T extends { syncedAt: string | null }>(record: T): Omit<T, 'syncedAt'> {
@@ -46,6 +68,8 @@ export function toWirePayload(payload: SyncPayload): WirePayload {
     categories: payload.categories.map(stripSyncedAt),
     transactions: payload.transactions.map(stripSyncedAt),
     disciplineState: payload.disciplineState ? stripSyncedAt(payload.disciplineState) : null,
+    loans: payload.loans.map(stripSyncedAt),
+    loanPayments: payload.loanPayments.map(stripSyncedAt),
   };
 }
 
@@ -54,7 +78,9 @@ export function hasDirtyRecords(payload: SyncPayload): boolean {
     payload.accounts.length > 0 ||
     payload.categories.length > 0 ||
     payload.transactions.length > 0 ||
-    payload.disciplineState !== null
+    payload.disciplineState !== null ||
+    payload.loans.length > 0 ||
+    payload.loanPayments.length > 0
   );
 }
 
@@ -75,7 +101,7 @@ function reconcileCollection<T extends { id: string; syncedAt: string | null; de
  * from local storage, since the server has already deleted its copy.
  * Records that weren't part of this push are left untouched.
  */
-export function applyPushResult(data: AppData, pushed: SyncPayload, syncedAt: string): AppData {
+export function applyPushResult(data: SyncedAppData, pushed: SyncPayload, syncedAt: string): SyncedAppData {
   const idsOf = (records: { id: string }[]) => new Set(records.map((r) => r.id));
   const deletedIdsOf = (records: { id: string; deletedAt: string | null }[]) =>
     new Set(records.filter((r) => r.deletedAt !== null).map((r) => r.id));
@@ -106,6 +132,18 @@ export function applyPushResult(data: AppData, pushed: SyncPayload, syncedAt: st
       syncedAt,
     ),
     disciplineState,
+    loans: reconcileCollection(
+      data.loans,
+      idsOf(pushed.loans),
+      deletedIdsOf(pushed.loans),
+      syncedAt,
+    ),
+    loanPayments: reconcileCollection(
+      data.loanPayments,
+      idsOf(pushed.loanPayments),
+      deletedIdsOf(pushed.loanPayments),
+      syncedAt,
+    ),
   };
 }
 
@@ -120,7 +158,7 @@ export function applyPullResult(
   pulled: SyncPayload,
   syncedAt: string,
   fallbackDisciplineState: DisciplineState,
-): AppData {
+): SyncedAppData {
   const markSynced = <T extends { syncedAt: string | null }>(records: T[]): T[] =>
     records.map((record) => ({ ...record, syncedAt }));
 
@@ -129,5 +167,7 @@ export function applyPullResult(
     categories: markSynced(pulled.categories),
     transactions: markSynced(pulled.transactions),
     disciplineState: { ...(pulled.disciplineState ?? fallbackDisciplineState), syncedAt },
+    loans: markSynced(pulled.loans),
+    loanPayments: markSynced(pulled.loanPayments),
   };
 }

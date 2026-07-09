@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Account, AppData, Category, DisciplineState, Transaction } from './types';
+import type { Account, AppData, Category, DisciplineState, Loan, LoanPayment, Transaction } from './types';
 
 const STORAGE_KEY = '@expense_tracker_v1';
 
@@ -31,6 +31,8 @@ export const DEFAULT_DATA: AppData = {
     syncedAt: null,
     deletedAt: null,
   },
+  loans: [],
+  loanPayments: [],
 };
 
 /**
@@ -53,6 +55,8 @@ function migrate(data: AppData): AppData {
     categories: data.categories.map((c: Category) => withSyncFields(c)),
     transactions: data.transactions.map((t: Transaction) => withSyncFields(t)),
     disciplineState: withSyncFields(data.disciplineState as DisciplineState),
+    loans: (data.loans ?? []).map((l: Loan) => withSyncFields(l)),
+    loanPayments: (data.loanPayments ?? []).map((p: LoanPayment) => withSyncFields(p)),
   };
 }
 

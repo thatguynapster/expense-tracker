@@ -69,6 +69,26 @@ function RootLayoutNav() {
           headerShown: false,
         }}
       />
+      <Stack.Screen
+        name="add-loan"
+        options={{
+          presentation: "modal",
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="record-loan-repayment"
+        options={{
+          presentation: "modal",
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
+        name="loan-detail"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }

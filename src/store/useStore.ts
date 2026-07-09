@@ -6,10 +6,17 @@ import type {
   Category,
   Transaction,
   DisciplineState,
+  Loan,
+  LoanPayment,
   SafeToSpendMetrics,
   SafeToSpendStatus,
 } from '@/lib/types';
-import { calculateSafeToSpendToday, calculateDisciplineDebt, getSafeToSpendStatus } from '@/utils/calculations';
+import {
+  calculateSafeToSpendToday,
+  calculateDisciplineDebt,
+  getSafeToSpendStatus,
+  getLoanOutstanding,
+} from '@/utils/calculations';
 import { applyPullResult, applyPushResult, collectDirtyRecords, hasDirtyRecords } from '@/utils/sync';
 
 const genId = (): string =>
@@ -43,11 +50,30 @@ export interface AddTransferParams {
   countsAsDebtRepayment?: boolean;
 }
 
+export interface AddLoanParams {
+  borrowerName: string;
+  principal: number;
+  sourceAccountId: string;
+  dateLent: string;
+  expectedRepaymentDate?: string | null;
+  note?: string;
+}
+
+export interface RecordLoanRepaymentParams {
+  loanId: string;
+  amount: number;
+  destinationAccountId: string;
+  date: string;
+  note?: string;
+}
+
 interface AppStore {
   accounts: Account[];
   categories: Category[];
   transactions: Transaction[];
   disciplineState: DisciplineState;
+  loans: Loan[];
+  loanPayments: LoanPayment[];
   isLoaded: boolean;
 
   loadData: () => Promise<void>;
@@ -62,6 +88,14 @@ interface AppStore {
   addIncome: (p: AddIncomeParams) => Promise<{ success: boolean; error?: string }>;
   addExpense: (p: AddExpenseParams) => Promise<{ success: boolean; error?: string; willGoDanger?: boolean }>;
   addTransfer: (p: AddTransferParams) => Promise<{ success: boolean; error?: string }>;
+
+  /** Loan disbursement: debits sourceAccountId, does not create a Transaction (per PRD §4.5 — not an expense). */
+  addLoan: (p: AddLoanParams) => Promise<{ success: boolean; error?: string }>;
+  /** Loan repayment: credits destinationAccountId, does not create a Transaction (per PRD §4.5 — not income). */
+  recordLoanRepayment: (p: RecordLoanRepaymentParams) => Promise<{ success: boolean; error?: string }>;
+  updateLoanExpectedRepaymentDate: (id: string, expectedRepaymentDate: string | null) => Promise<void>;
+  markLoanSettled: (id: string) => Promise<void>;
+  getLoanOutstanding: (loanId: string) => number;
 
   getSafeToSpendMetrics: () => SafeToSpendMetrics;
   getDisciplineDebt: () => number;
@@ -81,12 +115,16 @@ const persist = async (data: {
   categories: Category[];
   transactions: Transaction[];
   disciplineState: DisciplineState;
+  loans: Loan[];
+  loanPayments: LoanPayment[];
 }) => {
   await saveAppData({
     accounts: data.accounts,
     categories: data.categories,
     transactions: data.transactions,
     disciplineState: data.disciplineState,
+    loans: data.loans,
+    loanPayments: data.loanPayments,
   });
 };
 
@@ -103,6 +141,8 @@ export const useStore = create<AppStore>((set, get) => ({
     syncedAt: null,
     deletedAt: null,
   },
+  loans: [],
+  loanPayments: [],
   isLoaded: false,
 
   loadData: async () => {
@@ -113,6 +153,8 @@ export const useStore = create<AppStore>((set, get) => ({
       categories: data.categories,
       transactions: data.transactions,
       disciplineState: data.disciplineState,
+      loans: data.loans,
+      loanPayments: data.loanPayments,
       isLoaded: true,
     });
 
@@ -124,7 +166,7 @@ export const useStore = create<AppStore>((set, get) => ({
       if (pulled) {
         const restored = applyPullResult(pulled, now(), get().disciplineState);
         set(restored);
-        await saveAppData(restored);
+        await persist({ ...get(), ...restored });
       }
     }
   },
@@ -349,6 +391,115 @@ export const useStore = create<AppStore>((set, get) => ({
     void get().syncNow();
 
     return { success: true };
+  },
+
+  addLoan: async (p) => {
+    const { borrowerName, principal, sourceAccountId, dateLent, expectedRepaymentDate, note } = p;
+
+    if (!borrowerName.trim()) return { success: false, error: 'Borrower name is required.' };
+    if (principal <= 0) return { success: false, error: 'Principal must be positive.' };
+
+    const sourceAccount = get().accounts.find((a) => a.id === sourceAccountId);
+    if (!sourceAccount) return { success: false, error: 'Account not found.' };
+    if (sourceAccount.type !== 'spendable') {
+      return { success: false, error: 'Loans can only be disbursed from a spendable account.' };
+    }
+    if (expectedRepaymentDate && new Date(expectedRepaymentDate) <= new Date(dateLent)) {
+      return { success: false, error: 'Expected repayment date must be after the date lent.' };
+    }
+
+    // Disbursement debits the source account directly — it deliberately does
+    // NOT create a Transaction, since a loan out isn't an expense (PRD §4.5).
+    const loan: Loan = {
+      id: genId(),
+      borrowerName: borrowerName.trim(),
+      principal,
+      dateLent,
+      expectedRepaymentDate: expectedRepaymentDate ?? null,
+      note: note ?? null,
+      sourceAccountId,
+      createdAt: now(),
+      updatedAt: now(),
+      settledAt: null,
+      syncedAt: null,
+      deletedAt: null,
+    };
+
+    const accounts = get().accounts.map((a) =>
+      a.id === sourceAccountId ? { ...a, balance: a.balance - principal, updatedAt: now(), syncedAt: null } : a
+    );
+    const loans = [...get().loans, loan];
+    set({ accounts, loans });
+    await persist({ ...get(), accounts, loans });
+    void get().syncNow();
+
+    return { success: true };
+  },
+
+  recordLoanRepayment: async (p) => {
+    const { loanId, amount, destinationAccountId, date, note } = p;
+
+    if (amount <= 0) return { success: false, error: 'Amount must be positive.' };
+
+    const loan = get().loans.find((l) => l.id === loanId);
+    if (!loan) return { success: false, error: 'Loan not found.' };
+
+    const destinationAccount = get().accounts.find((a) => a.id === destinationAccountId);
+    if (!destinationAccount) return { success: false, error: 'Account not found.' };
+
+    const outstanding = getLoanOutstanding(loan, get().loanPayments);
+    if (amount > outstanding) {
+      return { success: false, error: `Repayment cannot exceed the outstanding balance (${outstanding.toFixed(2)}).` };
+    }
+
+    // Repayment credits the destination account directly — it deliberately
+    // does NOT create a Transaction, since loan repayment isn't income (PRD §4.5).
+    const payment: LoanPayment = {
+      id: genId(),
+      loanId,
+      amount,
+      date,
+      destinationAccountId,
+      note: note ?? null,
+      createdAt: now(),
+      updatedAt: now(),
+      syncedAt: null,
+      deletedAt: null,
+    };
+
+    const accounts = get().accounts.map((a) =>
+      a.id === destinationAccountId ? { ...a, balance: a.balance + amount, updatedAt: now(), syncedAt: null } : a
+    );
+    const loanPayments = [...get().loanPayments, payment];
+    set({ accounts, loanPayments });
+    await persist({ ...get(), accounts, loanPayments });
+    void get().syncNow();
+
+    return { success: true };
+  },
+
+  updateLoanExpectedRepaymentDate: async (id, expectedRepaymentDate) => {
+    const loans = get().loans.map((l) =>
+      l.id === id ? { ...l, expectedRepaymentDate, updatedAt: now(), syncedAt: null } : l
+    );
+    set({ loans });
+    await persist({ ...get(), loans });
+    void get().syncNow();
+  },
+
+  markLoanSettled: async (id) => {
+    const loans = get().loans.map((l) =>
+      l.id === id ? { ...l, settledAt: now(), updatedAt: now(), syncedAt: null } : l
+    );
+    set({ loans });
+    await persist({ ...get(), loans });
+    void get().syncNow();
+  },
+
+  getLoanOutstanding: (loanId) => {
+    const loan = get().loans.find((l) => l.id === loanId);
+    if (!loan) return 0;
+    return getLoanOutstanding(loan, get().loanPayments);
   },
 
   getSafeToSpendMetrics: () => {
