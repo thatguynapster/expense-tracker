@@ -50,7 +50,7 @@ export default function LoanDetailScreen() {
   if (borrowerLoans.length === 0) {
     return (
       <View style={[styles.root, { backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }]}>
-        <Text style={{ color: colors.mutedForeground }}>No loans found for this borrower.</Text>
+        <Text style={{ color: colors.mutedForeground }}>No IOUs found for this person.</Text>
       </View>
     );
   }
@@ -58,7 +58,7 @@ export default function LoanDetailScreen() {
   const handleMarkSettled = async (loan: Loan) => {
     Alert.alert(
       'Mark as settled?',
-      `This marks the loan to ${loan.borrowerName} as settled, regardless of remaining balance. This action is permanent and cannot be undone.`,
+      `This marks the amount owed by ${loan.borrowerName} as settled, regardless of remaining balance. This action is permanent and cannot be undone.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -106,7 +106,7 @@ export default function LoanDetailScreen() {
         </View>
 
         <Text style={[styles.loanMeta, { color: colors.mutedForeground }]}>
-          Lent {formatDate(loan.dateLent)}
+          Given {formatDate(loan.dateLent)}
         </Text>
 
         {!loan.settledAt && (
@@ -198,11 +198,11 @@ export default function LoanDetailScreen() {
           onPress={handleAddLoan}
         >
           <Feather name="plus" size={16} color={colors.primary} style={{ marginRight: 6 }} />
-          <Text style={[styles.addLoanBtnText, { color: colors.primary }]}>Lend {borrowerName} More</Text>
+          <Text style={[styles.addLoanBtnText, { color: colors.primary }]}>Add Another IOU for {borrowerName}</Text>
         </TouchableOpacity>
 
         {activeLoans.length > 0 && (
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ACTIVE LOANS</Text>
+          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ACTIVE</Text>
         )}
         {activeLoans.map((loan) => (
           <LoanCard key={loan.id} loan={loan} />
@@ -211,7 +211,7 @@ export default function LoanDetailScreen() {
         {settledLoans.length > 0 && (
           <>
             <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 8 }]}>
-              SETTLED LOANS
+              SETTLED
             </Text>
             {settledLoans.map((loan) => (
               <LoanCard key={loan.id} loan={loan} />
@@ -239,7 +239,7 @@ export default function LoanDetailScreen() {
             </View>
             <View style={{ flex: 1 }}>
               <Text style={[styles.timelineLabel, { color: colors.foreground }]}>
-                {entry.kind === 'disbursement' ? 'Lent' : 'Repaid'}
+                {entry.kind === 'disbursement' ? 'Given' : 'Repaid'}
               </Text>
               <Text style={[styles.timelineDate, { color: colors.mutedForeground }]}>
                 {formatDate(entry.date)}

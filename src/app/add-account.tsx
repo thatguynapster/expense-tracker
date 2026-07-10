@@ -74,7 +74,7 @@ export default function AddAccountScreen() {
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
       Alert.alert(
         'Cannot Delete',
-        `${existing.name} has existing transactions or loan activity and cannot be deleted.`
+        `${existing.name} has existing transactions or IOU activity and cannot be deleted.`
       );
       return;
     }

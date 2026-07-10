@@ -59,7 +59,7 @@ export default function LoansScreen() {
       <View style={[styles.loanRow, { borderTopColor: colors.border }]}>
         <View style={styles.loanRowMain}>
           <Text style={[styles.loanPrincipal, { color: colors.foreground }]}>
-            {formatCurrency(loan.principal)} lent · {formatCurrency(repaidToDate)} repaid
+            {formatCurrency(loan.principal)} owed · {formatCurrency(repaidToDate)} repaid
           </Text>
           <Text style={[styles.loanMeta, { color: colors.mutedForeground }]}>
             Last activity {formatDateShort(lastActivityDate(loan, loanPayments))}
@@ -92,7 +92,7 @@ export default function LoansScreen() {
         ]}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={[styles.title, { color: colors.foreground }]}>Loans</Text>
+        <Text style={[styles.title, { color: colors.foreground }]}>IOUs</Text>
 
         {borrowerGroups.length > 0 && (
           <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ACTIVE</Text>
@@ -112,7 +112,7 @@ export default function LoansScreen() {
               <View style={{ flex: 1 }}>
                 <Text style={[styles.borrowerName, { color: colors.foreground }]}>{group.borrowerName}</Text>
                 <Text style={[styles.borrowerSub, { color: colors.mutedForeground }]}>
-                  {group.loans.length} active loan{group.loans.length === 1 ? '' : 's'}
+                  {group.loans.length} active IOU{group.loans.length === 1 ? '' : 's'}
                 </Text>
               </View>
               <Text style={[styles.borrowerTotal, { color: colors.foreground }]}>
@@ -130,9 +130,9 @@ export default function LoansScreen() {
         {borrowerGroups.length === 0 && (
           <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Feather name="dollar-sign" size={36} color={colors.mutedForeground} />
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No active loans</Text>
+            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No active IOUs</Text>
             <Text style={[styles.emptyDesc, { color: colors.mutedForeground }]}>
-              Track money you’ve lent out and when it’s due back
+              Track money owed to you — loans, or anything you paid for someone else — and when it’s due back
             </Text>
           </View>
         )}

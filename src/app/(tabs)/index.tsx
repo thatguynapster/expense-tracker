@@ -174,7 +174,7 @@ export default function HomeScreen() {
                 You are owed {formatCurrency(loansSummary.totalOutstanding)}
               </Text>
               <Text style={[styles.loansSummaryDesc, { color: colors.mutedForeground }]}>
-                Across {loansSummary.borrowerCount} borrower{loansSummary.borrowerCount === 1 ? '' : 's'}
+                Across {loansSummary.borrowerCount} {loansSummary.borrowerCount === 1 ? 'person' : 'people'}
                 {loansSummary.overdueCount > 0
                   ? ` · ${loansSummary.overdueCount} overdue`
                   : ''}

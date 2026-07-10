@@ -27,7 +27,7 @@ function NativeTabLayout() {
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="loans">
         <NativeTabs.Trigger.Icon sf={{ default: "banknote", selected: "banknote.fill" }} />
-        <NativeTabs.Trigger.Label>Loans</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>IOUs</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="settings">
         <NativeTabs.Trigger.Icon sf={{ default: "gearshape", selected: "gearshape.fill" }} />
@@ -113,7 +113,7 @@ function ClassicTabLayout() {
       <Tabs.Screen
         name="loans"
         options={{
-          title: "Loans",
+          title: "IOUs",
           tabBarIcon: ({ color }) =>
             isIOS ? (
               <SymbolView name="banknote" tintColor={color} size={22} />

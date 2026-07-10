@@ -52,15 +52,15 @@ export default function AddLoanScreen() {
 
   const handleSave = async () => {
     if (!borrowerName.trim()) {
-      Alert.alert('Borrower required', 'Please enter who you’re lending to.');
+      Alert.alert('Name required', 'Please enter who owes you.');
       return;
     }
     if (!principal || principalNum <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid principal amount.');
+      Alert.alert('Invalid amount', 'Please enter a valid amount.');
       return;
     }
     if (!sourceAccountId) {
-      Alert.alert('Select account', 'Please select which account the money is coming from.');
+      Alert.alert('Select account', 'Please select which account this came out of.');
       return;
     }
 
@@ -94,7 +94,7 @@ export default function AddLoanScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
           <Feather name="x" size={22} color={colors.foreground} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Lend Money</Text>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Add IOU</Text>
         <TouchableOpacity
           style={[styles.saveBtn, { backgroundColor: saving ? colors.muted : colors.primary }]}
           onPress={handleSave}
@@ -110,7 +110,7 @@ export default function AddLoanScreen() {
         keyboardShouldPersistTaps="handled"
       >
         <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Borrower Name</Text>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Owed By</Text>
           <TextInput
             style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
             placeholder="e.g. Kwame Mensah"
@@ -123,7 +123,7 @@ export default function AddLoanScreen() {
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Principal Amount</Text>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Amount</Text>
           <View style={[styles.amountRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
             <Text style={[styles.currencyPrefix, { color: colors.mutedForeground }]}>GH₵</Text>
             <TextInput
@@ -171,12 +171,12 @@ export default function AddLoanScreen() {
         <View style={[styles.infoBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
           <Feather name="info" size={14} color={colors.mutedForeground} style={{ marginRight: 8 }} />
           <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-            This debits the account directly and won’t show up as an expense.
+            This debits the account directly and won’t show up as an expense — works the same whether it’s a cash loan or something you paid for on someone’s behalf.
           </Text>
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Date Lent</Text>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Date</Text>
           <CalendarPicker value={dateLent} onChange={setDateLent} maximumDate={new Date()} />
         </View>
 

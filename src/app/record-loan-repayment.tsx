@@ -170,7 +170,7 @@ export default function RecordLoanRepaymentScreen() {
         <View style={[styles.infoBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
           <Feather name="info" size={14} color={colors.mutedForeground} style={{ marginRight: 8 }} />
           <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-            Repayments always credit{sourceAccount ? ` ${sourceAccount.name}` : ' the account this loan was disbursed from'}, so its balance recovers regardless of where you actually received the cash. &quot;Received Into&quot; is just a record — it won&apos;t affect that account&apos;s balance. This won&apos;t show up as income.
+            Repayments always credit{sourceAccount ? ` ${sourceAccount.name}` : ' the account this was originally given from'}, so its balance recovers regardless of where you actually received the cash. &quot;Received Into&quot; is just a record — it won&apos;t affect that account&apos;s balance. This won&apos;t show up as income.
           </Text>
         </View>
 

@@ -439,16 +439,16 @@ export const useStore = create<AppStore>((set, get) => ({
   addLoan: async (p) => {
     const { borrowerName, principal, sourceAccountId, dateLent, expectedRepaymentDate, note } = p;
 
-    if (!borrowerName.trim()) return { success: false, error: 'Borrower name is required.' };
-    if (principal <= 0) return { success: false, error: 'Principal must be positive.' };
+    if (!borrowerName.trim()) return { success: false, error: 'A name is required.' };
+    if (principal <= 0) return { success: false, error: 'Amount must be positive.' };
 
     const sourceAccount = get().accounts.find((a) => a.id === sourceAccountId);
     if (!sourceAccount) return { success: false, error: 'Account not found.' };
     if (sourceAccount.type !== 'spendable') {
-      return { success: false, error: 'Loans can only be disbursed from a spendable account.' };
+      return { success: false, error: 'This can only be tracked from a spendable account.' };
     }
     if (expectedRepaymentDate && new Date(expectedRepaymentDate) <= new Date(dateLent)) {
-      return { success: false, error: 'Expected repayment date must be after the date lent.' };
+      return { success: false, error: 'Expected repayment date must be after the date given.' };
     }
 
     // Disbursement debits the source account directly — it deliberately does
