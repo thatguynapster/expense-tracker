@@ -3,7 +3,9 @@ import { isFirstLaunch, loadAppData, saveAppData } from '@/lib/storage';
 import { pullFromServer, pushToServer } from '@/lib/syncApi';
 import type {
   Account,
+  Budget,
   Category,
+  CategoryType,
   Transaction,
   DisciplineState,
   Loan,
@@ -16,8 +18,12 @@ import {
   calculateDisciplineDebt,
   getSafeToSpendStatus,
   getLoanOutstanding,
+  getBudgetPlannedAmount,
+  getMonthSummary,
+  DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
+  type MonthSummary,
 } from '@/utils/calculations';
-import { applyPullResult, applyPushResult, collectDirtyRecords, hasDirtyRecords } from '@/utils/sync';
+import { applyPullResult, applyPushResult, collectDirtyRecords, hasDirtyRecords, isEmptyPullResult } from '@/utils/sync';
 
 const genId = (): string =>
   Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
@@ -29,13 +35,14 @@ export interface AddIncomeParams {
   protectedAccountId: string;
   selectedSavingsAmount: number;
   date: string;
+  categoryId?: string;
   note?: string;
 }
 
 export interface AddExpenseParams {
   amount: number;
   accountId: string;
-  categoryId?: string;
+  categoryId: string;
   date: string;
   note?: string;
 }
@@ -74,16 +81,25 @@ interface AppStore {
   disciplineState: DisciplineState;
   loans: Loan[];
   loanPayments: LoanPayment[];
+  budgets: Budget[];
   isLoaded: boolean;
 
   loadData: () => Promise<void>;
 
   addAccount: (name: string, type: 'spendable' | 'protected', initialBalance?: number) => Promise<void>;
   updateAccount: (id: string, name: string) => Promise<void>;
+  deleteAccount: (id: string) => Promise<void>;
 
-  addCategory: (name: string, monthlyBudget?: number | null) => Promise<void>;
-  updateCategory: (id: string, name: string, monthlyBudget?: number | null) => Promise<void>;
+  addCategory: (name: string, type: CategoryType) => Promise<void>;
+  updateCategory: (id: string, name: string) => Promise<void>;
   deleteCategory: (id: string) => Promise<void>;
+
+  /** Upsert-by-(categoryId, month): sets or replaces that month's planned amount without touching any other month's Budget record. */
+  setBudget: (categoryId: string, month: string, plannedAmount: number) => Promise<void>;
+  /** 0 when no Budget record exists for that category+month — the PRD-specified default, not an error case. */
+  getBudgetPlannedAmount: (categoryId: string, month: string) => number;
+  /** `month` in `YYYY-MM`. Actuals are always derived from transactions, never entered manually. */
+  getMonthSummary: (month: string) => MonthSummary;
 
   addIncome: (p: AddIncomeParams) => Promise<{ success: boolean; error?: string }>;
   addExpense: (p: AddExpenseParams) => Promise<{ success: boolean; error?: string; willGoDanger?: boolean }>;
@@ -100,6 +116,8 @@ interface AppStore {
   getSafeToSpendMetrics: () => SafeToSpendMetrics;
   getDisciplineDebt: () => number;
   getSafeToSpendStatus: () => SafeToSpendStatus;
+  /** PRD §5.7: editable, defaults to GHS 50/day. */
+  updateSafeToSpendWarningThreshold: (threshold: number) => Promise<void>;
 
   /**
    * Pushes any locally dirty records (syncedAt: null) to the server. A
@@ -117,6 +135,7 @@ const persist = async (data: {
   disciplineState: DisciplineState;
   loans: Loan[];
   loanPayments: LoanPayment[];
+  budgets: Budget[];
 }) => {
   await saveAppData({
     accounts: data.accounts,
@@ -125,6 +144,7 @@ const persist = async (data: {
     disciplineState: data.disciplineState,
     loans: data.loans,
     loanPayments: data.loanPayments,
+    budgets: data.budgets,
   });
 };
 
@@ -136,6 +156,7 @@ export const useStore = create<AppStore>((set, get) => ({
     id: 'discipline_main',
     totalWithdrawnFromSavings: 0,
     totalExtraSavings: 0,
+    safeToSpendWarningThreshold: DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
     createdAt: now(),
     updatedAt: now(),
     syncedAt: null,
@@ -143,6 +164,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
   loans: [],
   loanPayments: [],
+  budgets: [],
   isLoaded: false,
 
   loadData: async () => {
@@ -155,18 +177,25 @@ export const useStore = create<AppStore>((set, get) => ({
       disciplineState: data.disciplineState,
       loans: data.loans,
       loanPayments: data.loanPayments,
+      budgets: data.budgets,
       isLoaded: true,
     });
 
     // Fresh install / new device: nothing local yet, so try restoring from
-    // the server. A no-op if sync isn't configured or the server has
-    // nothing either — the freshly-seeded local defaults stand as-is.
+    // the server. If sync isn't configured, unreachable, or the server is
+    // genuinely blank (nothing has ever been pushed by any device), the
+    // freshly-seeded local defaults are the only starting point either side
+    // has — keep them and push them up, so the server has a starting point
+    // for the *next* fresh device too, instead of silently wiping the local
+    // defaults down to nothing on every reachable-but-empty pull.
     if (fresh) {
       const pulled = await pullFromServer();
-      if (pulled) {
+      if (pulled && !isEmptyPullResult(pulled)) {
         const restored = applyPullResult(pulled, now(), get().disciplineState);
         set(restored);
         await persist({ ...get(), ...restored });
+      } else {
+        void get().syncNow();
       }
     }
   },
@@ -197,11 +226,23 @@ export const useStore = create<AppStore>((set, get) => ({
     void get().syncNow();
   },
 
-  addCategory: async (name, monthlyBudget) => {
+  deleteAccount: async (id) => {
+    // Soft delete, same pattern as deleteCategory. Callers are responsible for
+    // guarding against deleting an account still referenced by transactions,
+    // loans, or loan payments — this action does not check that itself.
+    const accounts = get().accounts.map((a) =>
+      a.id === id ? { ...a, deletedAt: now(), updatedAt: now(), syncedAt: null } : a
+    );
+    set({ accounts });
+    await persist({ ...get(), accounts });
+    void get().syncNow();
+  },
+
+  addCategory: async (name, type) => {
     const category: Category = {
       id: genId(),
       name,
-      monthlyBudget: monthlyBudget ?? null,
+      type,
       createdAt: now(),
       updatedAt: now(),
       syncedAt: null,
@@ -213,9 +254,9 @@ export const useStore = create<AppStore>((set, get) => ({
     void get().syncNow();
   },
 
-  updateCategory: async (id, name, monthlyBudget) => {
+  updateCategory: async (id, name) => {
     const categories = get().categories.map((c) =>
-      c.id === id ? { ...c, name, monthlyBudget: monthlyBudget ?? null, updatedAt: now(), syncedAt: null } : c
+      c.id === id ? { ...c, name, updatedAt: now(), syncedAt: null } : c
     );
     set({ categories });
     await persist({ ...get(), categories });
@@ -236,7 +277,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   addIncome: async (p) => {
-    const { amount, spendableAccountId, protectedAccountId, selectedSavingsAmount, date, note } = p;
+    const { amount, spendableAccountId, protectedAccountId, selectedSavingsAmount, date, categoryId, note } = p;
 
     if (amount <= 0) return { success: false, error: 'Amount must be positive.' };
     const minimumSavings = amount * 0.1;
@@ -255,6 +296,7 @@ export const useStore = create<AppStore>((set, get) => ({
       type: 'income',
       amount,
       date,
+      categoryId: categoryId ?? null,
       toAccountId: spendableAccountId,
       savingsAccountId: protectedAccountId,
       savingsAmount: selectedSavingsAmount,
@@ -290,6 +332,7 @@ export const useStore = create<AppStore>((set, get) => ({
     const { amount, accountId, categoryId, date, note } = p;
 
     if (amount <= 0) return { success: false, error: 'Amount must be positive.' };
+    if (!categoryId) return { success: false, error: 'Category is required.' };
 
     const account = get().accounts.find((a) => a.id === accountId);
     if (!account) return { success: false, error: 'Account not found.' };
@@ -309,7 +352,7 @@ export const useStore = create<AppStore>((set, get) => ({
       amount,
       date,
       fromAccountId: accountId,
-      categoryId: categoryId ?? null,
+      categoryId,
       note: note ?? null,
       createdAt: now(),
       updatedAt: now(),
@@ -452,8 +495,13 @@ export const useStore = create<AppStore>((set, get) => ({
       return { success: false, error: `Repayment cannot exceed the outstanding balance (${outstanding.toFixed(2)}).` };
     }
 
-    // Repayment credits the destination account directly — it deliberately
-    // does NOT create a Transaction, since loan repayment isn't income (PRD §4.5).
+    // Repayment always credits the loan's source account (where the
+    // principal was disbursed from), not necessarily destinationAccountId —
+    // that field is kept purely as a record of where the cash physically
+    // landed. Crediting anywhere else would leave the source account's
+    // balance permanently understated even after the loan is fully repaid.
+    // Deliberately does NOT create a Transaction, since loan repayment isn't
+    // income (PRD §4.5).
     const payment: LoanPayment = {
       id: genId(),
       loanId,
@@ -468,7 +516,7 @@ export const useStore = create<AppStore>((set, get) => ({
     };
 
     const accounts = get().accounts.map((a) =>
-      a.id === destinationAccountId ? { ...a, balance: a.balance + amount, updatedAt: now(), syncedAt: null } : a
+      a.id === loan.sourceAccountId ? { ...a, balance: a.balance + amount, updatedAt: now(), syncedAt: null } : a
     );
     const loanPayments = [...get().loanPayments, payment];
     set({ accounts, loanPayments });
@@ -502,6 +550,40 @@ export const useStore = create<AppStore>((set, get) => ({
     return getLoanOutstanding(loan, get().loanPayments);
   },
 
+  setBudget: async (categoryId, month, plannedAmount) => {
+    const existing = get().budgets.find((b) => b.categoryId === categoryId && b.month === month && !b.deletedAt);
+
+    const budgets = existing
+      ? get().budgets.map((b) =>
+          b.id === existing.id ? { ...b, plannedAmount, updatedAt: now(), syncedAt: null } : b
+        )
+      : [
+          ...get().budgets,
+          {
+            id: genId(),
+            categoryId,
+            month,
+            plannedAmount,
+            createdAt: now(),
+            updatedAt: now(),
+            syncedAt: null,
+            deletedAt: null,
+          } satisfies Budget,
+        ];
+
+    set({ budgets });
+    await persist({ ...get(), budgets });
+    void get().syncNow();
+  },
+
+  getBudgetPlannedAmount: (categoryId, month) => {
+    return getBudgetPlannedAmount(get().budgets, categoryId, month);
+  },
+
+  getMonthSummary: (month) => {
+    return getMonthSummary(month, get().transactions, get().categories, get().budgets);
+  },
+
   getSafeToSpendMetrics: () => {
     return calculateSafeToSpendToday(get().accounts);
   },
@@ -512,7 +594,19 @@ export const useStore = create<AppStore>((set, get) => ({
 
   getSafeToSpendStatus: () => {
     const { safeToSpendToday } = calculateSafeToSpendToday(get().accounts);
-    return getSafeToSpendStatus(safeToSpendToday);
+    return getSafeToSpendStatus(safeToSpendToday, get().disciplineState.safeToSpendWarningThreshold);
+  },
+
+  updateSafeToSpendWarningThreshold: async (threshold) => {
+    const disciplineState: DisciplineState = {
+      ...get().disciplineState,
+      safeToSpendWarningThreshold: threshold,
+      updatedAt: now(),
+      syncedAt: null,
+    };
+    set({ disciplineState });
+    await persist({ ...get(), disciplineState });
+    void get().syncNow();
   },
 
   syncNow: async () => {

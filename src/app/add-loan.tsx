@@ -15,6 +15,7 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { CalendarPicker } from '@/components/CalendarPicker';
 import { useStore } from '@/store/useStore';
+import { sortAccounts } from '@/utils/sorting';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 
 function dateToStr(date: Date): string {
@@ -30,7 +31,7 @@ export default function AddLoanScreen() {
   const isWeb = Platform.OS === 'web';
   const { borrowerName: prefilledBorrower } = useLocalSearchParams<{ borrowerName?: string }>();
 
-  const accounts = useStore((s) => s.accounts);
+  const accounts = sortAccounts(useStore((s) => s.accounts).filter((a) => !a.deletedAt));
   const addLoan = useStore((s) => s.addLoan);
   const spendableAccounts = accounts.filter((a) => a.type === 'spendable');
 

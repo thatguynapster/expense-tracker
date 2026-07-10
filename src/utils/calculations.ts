@@ -1,4 +1,4 @@
-import type { Account, DisciplineState, Loan, LoanPayment, SafeToSpendMetrics, SafeToSpendStatus } from '@/lib/types';
+import type { Account, Budget, Category, DisciplineState, Loan, LoanPayment, SafeToSpendMetrics, SafeToSpendStatus, Transaction } from '@/lib/types';
 import { getDaysRemainingInMonth } from './month';
 
 export function calculateSafeToSpendToday(
@@ -6,7 +6,7 @@ export function calculateSafeToSpendToday(
   currentDate?: Date
 ): SafeToSpendMetrics {
   const usableBalance = accounts
-    .filter((a) => a.type === 'spendable')
+    .filter((a) => a.type === 'spendable' && !a.deletedAt)
     .reduce((sum, a) => sum + a.balance, 0);
 
   const daysRemaining = getDaysRemainingInMonth(currentDate);
@@ -20,11 +20,15 @@ export function calculateDisciplineDebt(state: DisciplineState): number {
   return Math.max(0, state.totalWithdrawnFromSavings - state.totalExtraSavings);
 }
 
-const WARNING_THRESHOLD = 50;
+/** Default when a DisciplineState record predates the editable-threshold setting (PRD §5.7). */
+export const DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD = 50;
 
-export function getSafeToSpendStatus(safeToSpendToday: number): SafeToSpendStatus {
+export function getSafeToSpendStatus(
+  safeToSpendToday: number,
+  warningThreshold: number = DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
+): SafeToSpendStatus {
   if (safeToSpendToday <= 0) return 'danger';
-  if (safeToSpendToday < WARNING_THRESHOLD) return 'warning';
+  if (safeToSpendToday < warningThreshold) return 'warning';
   return 'safe';
 }
 
@@ -66,4 +70,64 @@ export function getLoansSummary(loans: Loan[], payments: LoanPayment[], currentD
   const overdueCount = activeWithBalance.filter((loan) => isLoanOverdue(loan, payments, currentDate)).length;
 
   return { totalOutstanding, borrowerCount, overdueCount };
+}
+
+/**
+ * 0 when no Budget record exists for that category+month — this is the
+ * PRD-specified default (§4.6), not an error case. Adjusting a future
+ * month's planned amount never touches this or any other past month's
+ * record, since each (categoryId, month) pair is its own Budget row.
+ */
+export function getBudgetPlannedAmount(budgets: Budget[], categoryId: string, month: string): number {
+  const match = budgets.find((b) => b.categoryId === categoryId && b.month === month && !b.deletedAt);
+  return match?.plannedAmount ?? 0;
+}
+
+export interface CategoryPlannedVsActual {
+  categoryId: string;
+  categoryName: string;
+  planned: number;
+  actual: number;
+}
+
+export interface MonthSummary {
+  totalIncome: number;
+  totalExpenses: number;
+  netSavings: number;
+  /** Expense categories only — budgets apply to expenses, not income (PRD §4.6). */
+  plannedVsActual: CategoryPlannedVsActual[];
+}
+
+/**
+ * `month` in `YYYY-MM`. Actuals are always derived from transactions dated
+ * within that month — never entered manually (PRD §4.6) — so this can
+ * never drift out of sync with the transaction ledger the way a
+ * hand-maintained running total could.
+ */
+export function getMonthSummary(
+  month: string,
+  transactions: Transaction[],
+  categories: Category[],
+  budgets: Budget[],
+): MonthSummary {
+  const inMonth = transactions.filter((t) => t.date.startsWith(month) && !t.deletedAt);
+
+  const totalIncome = inMonth.filter((t) => t.type === 'income').reduce((sum, t) => sum + t.amount, 0);
+  const totalExpenses = inMonth.filter((t) => t.type === 'expense').reduce((sum, t) => sum + t.amount, 0);
+  const netSavings = totalIncome - totalExpenses;
+
+  const expenseCategories = categories.filter((c) => c.type === 'expense' && !c.deletedAt);
+  const plannedVsActual: CategoryPlannedVsActual[] = expenseCategories.map((category) => {
+    const actual = inMonth
+      .filter((t) => t.type === 'expense' && t.categoryId === category.id)
+      .reduce((sum, t) => sum + t.amount, 0);
+    return {
+      categoryId: category.id,
+      categoryName: category.name,
+      planned: getBudgetPlannedAmount(budgets, category.id, month),
+      actual,
+    };
+  });
+
+  return { totalIncome, totalExpenses, netSavings, plannedVsActual };
 }

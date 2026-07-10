@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import type { Account, Category, DisciplineState, Loan, LoanPayment, Transaction } from '@/lib/types';
+import type { Account, Budget, Category, DisciplineState, Loan, LoanPayment, Transaction } from '@/lib/types';
 import {
   applyPullResult,
   applyPushResult,
   collectDirtyRecords,
   hasDirtyRecords,
+  isEmptyPullResult,
   toWirePayload,
   type SyncedAppData,
 } from './sync';
@@ -24,7 +25,7 @@ const account = (overrides: Partial<Account> = {}): Account => ({
 const category = (overrides: Partial<Category> = {}): Category => ({
   id: 'cat_1',
   name: 'Food',
-  monthlyBudget: null,
+  type: 'expense',
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   syncedAt: null,
@@ -56,6 +57,7 @@ const disciplineState = (overrides: Partial<DisciplineState> = {}): DisciplineSt
   id: 'discipline_main',
   totalWithdrawnFromSavings: 0,
   totalExtraSavings: 0,
+  safeToSpendWarningThreshold: 50,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   syncedAt: null,
@@ -93,6 +95,18 @@ const loanPayment = (overrides: Partial<LoanPayment> = {}): LoanPayment => ({
   ...overrides,
 });
 
+const budget = (overrides: Partial<Budget> = {}): Budget => ({
+  id: 'budget_1',
+  categoryId: 'cat_1',
+  month: '2026-01',
+  plannedAmount: 200,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  syncedAt: null,
+  deletedAt: null,
+  ...overrides,
+});
+
 const appData = (overrides: Partial<SyncedAppData> = {}): SyncedAppData => ({
   accounts: [],
   categories: [],
@@ -100,6 +114,7 @@ const appData = (overrides: Partial<SyncedAppData> = {}): SyncedAppData => ({
   disciplineState: disciplineState(),
   loans: [],
   loanPayments: [],
+  budgets: [],
   ...overrides,
 });
 
@@ -110,6 +125,7 @@ const emptyPayload = {
   disciplineState: null,
   loans: [],
   loanPayments: [],
+  budgets: [],
 };
 
 describe('collectDirtyRecords', () => {
@@ -179,6 +195,28 @@ describe('hasDirtyRecords', () => {
 
   it('is true when only loanPayments has an entry', () => {
     expect(hasDirtyRecords({ ...emptyPayload, loanPayments: [loanPayment()] })).toBe(true);
+  });
+
+  it('is true when only budgets has an entry', () => {
+    expect(hasDirtyRecords({ ...emptyPayload, budgets: [budget()] })).toBe(true);
+  });
+});
+
+describe('isEmptyPullResult', () => {
+  it('is true for an entirely empty pull (a genuinely blank server)', () => {
+    expect(isEmptyPullResult(emptyPayload)).toBe(true);
+  });
+
+  it('is false when the server has at least one account', () => {
+    expect(isEmptyPullResult({ ...emptyPayload, accounts: [account()] })).toBe(false);
+  });
+
+  it('is false when the server has at least one category', () => {
+    expect(isEmptyPullResult({ ...emptyPayload, categories: [category()] })).toBe(false);
+  });
+
+  it('is false when the server has disciplineState but nothing else', () => {
+    expect(isEmptyPullResult({ ...emptyPayload, disciplineState: disciplineState() })).toBe(false);
   });
 });
 
@@ -280,6 +318,26 @@ describe('applyPushResult', () => {
 
     expect(result.loanPayments).toEqual([{ ...dirty, syncedAt }]);
   });
+
+  it('marks a pushed budget as synced', () => {
+    const dirty = budget({ id: 'budget_dirty', syncedAt: null });
+    const data = appData({ budgets: [dirty] });
+    const pushed = { ...emptyPayload, budgets: [dirty] };
+
+    const result = applyPushResult(data, pushed, syncedAt);
+
+    expect(result.budgets).toEqual([{ ...dirty, syncedAt }]);
+  });
+
+  it('purges a pushed, tombstoned budget entirely', () => {
+    const tombstoned = budget({ id: 'budget_gone', syncedAt: null, deletedAt: '2026-01-09T00:00:00.000Z' });
+    const data = appData({ budgets: [tombstoned] });
+    const pushed = { ...emptyPayload, budgets: [tombstoned] };
+
+    const result = applyPushResult(data, pushed, syncedAt);
+
+    expect(result.budgets).toEqual([]);
+  });
 });
 
 describe('applyPullResult', () => {
@@ -293,6 +351,7 @@ describe('applyPullResult', () => {
     const pulledDisciplineState = disciplineState({ syncedAt: null });
     const pulledLoan = loan({ syncedAt: null });
     const pulledLoanPayment = loanPayment({ syncedAt: null });
+    const pulledBudget = budget({ syncedAt: null });
 
     const result = applyPullResult(
       {
@@ -302,6 +361,7 @@ describe('applyPullResult', () => {
         disciplineState: pulledDisciplineState,
         loans: [pulledLoan],
         loanPayments: [pulledLoanPayment],
+        budgets: [pulledBudget],
       },
       syncedAt,
       fallbackDisciplineState,
@@ -313,6 +373,7 @@ describe('applyPullResult', () => {
     expect(result.disciplineState).toEqual({ ...pulledDisciplineState, syncedAt });
     expect(result.loans).toEqual([{ ...pulledLoan, syncedAt }]);
     expect(result.loanPayments).toEqual([{ ...pulledLoanPayment, syncedAt }]);
+    expect(result.budgets).toEqual([{ ...pulledBudget, syncedAt }]);
   });
 
   it('uses the fallback disciplineState (marked synced) when the server has none yet', () => {
@@ -368,6 +429,12 @@ describe('toWirePayload', () => {
 
     expect(wire.loans[0]).not.toHaveProperty('syncedAt');
     expect(wire.loanPayments[0]).not.toHaveProperty('syncedAt');
+  });
+
+  it('strips syncedAt from budgets', () => {
+    const wire = toWirePayload({ ...emptyPayload, budgets: [budget({ syncedAt: null })] });
+
+    expect(wire.budgets[0]).not.toHaveProperty('syncedAt');
   });
 
   it('preserves every other field, including deletedAt (the server does understand that one)', () => {

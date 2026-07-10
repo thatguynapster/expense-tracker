@@ -7,6 +7,7 @@ import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
 import { useStore } from '@/store/useStore';
 import { formatCurrency } from '@/utils/format';
+import { sortAccounts } from '@/utils/sorting';
 import type { Account } from '@/lib/types';
 
 export default function AccountsScreen() {
@@ -14,7 +15,8 @@ export default function AccountsScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
 
-  const accounts = useStore((s) => s.accounts);
+  const activeAccounts = useStore((s) => s.accounts).filter((a) => !a.deletedAt);
+  const accounts = sortAccounts(activeAccounts);
   const spendable = accounts.filter((a) => a.type === 'spendable');
   const protected_ = accounts.filter((a) => a.type === 'protected');
 

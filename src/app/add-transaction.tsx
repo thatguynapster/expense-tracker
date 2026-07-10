@@ -16,6 +16,7 @@ import { useColors } from '@/hooks/useColors';
 import { CalendarPicker } from '@/components/CalendarPicker';
 import { useStore } from '@/store/useStore';
 import { formatCurrency } from '@/utils/format';
+import { sortAccounts, sortCategoriesAlphabetically } from '@/utils/sorting';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 
 type TxType = 'expense' | 'income' | 'transfer';
@@ -40,10 +41,13 @@ export default function AddTransactionScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
-  const accounts = useStore((s) => s.accounts);
+  const accounts = sortAccounts(useStore((s) => s.accounts).filter((a) => !a.deletedAt));
   // Soft-deleted categories stay in local storage until sync purges them —
-  // filter them out of the picker.
-  const categories = useStore((s) => s.categories).filter((c) => !c.deletedAt);
+  // filter them out of the picker. Also split by type so the expense form
+  // only ever shows expense categories and vice versa.
+  const activeCategories = useStore((s) => s.categories).filter((c) => !c.deletedAt);
+  const expenseCategories = sortCategoriesAlphabetically(activeCategories.filter((c) => c.type === 'expense'));
+  const incomeCategories = sortCategoriesAlphabetically(activeCategories.filter((c) => c.type === 'income'));
   const addIncome = useStore((s) => s.addIncome);
   const addExpense = useStore((s) => s.addExpense);
   const addTransfer = useStore((s) => s.addTransfer);
@@ -62,6 +66,7 @@ export default function AddTransactionScreen() {
   // Income fields
   const [incSpendableId, setIncSpendableId] = useState('');
   const [incProtectedId, setIncProtectedId] = useState('');
+  const [incCategoryId, setIncCategoryId] = useState('');
   const [savingsAmount, setSavingsAmount] = useState('');
 
   // Transfer fields
@@ -93,24 +98,15 @@ export default function AddTransactionScreen() {
     setSavingsAmount((num * 0.1).toFixed(2));
   };
 
-  const handleSave = async () => {
-    if (!amount || amountNum <= 0) {
-      Alert.alert('Invalid amount', 'Please enter a valid amount.');
-      return;
-    }
-
+  const executeSave = async () => {
     const dateStr = dateToStr(date) + 'T00:00:00.000Z';
     setSaving(true);
     try {
       if (txType === 'expense') {
-        if (!expAccountId) {
-          Alert.alert('Select account', 'Please select an account.');
-          return;
-        }
         const result = await addExpense({
           amount: amountNum,
           accountId: expAccountId,
-          categoryId: expCategoryId || undefined,
+          categoryId: expCategoryId,
           date: dateStr,
           note: note || undefined,
         });
@@ -128,16 +124,13 @@ export default function AddTransactionScreen() {
           return;
         }
       } else if (txType === 'income') {
-        if (!incSpendableId || !incProtectedId) {
-          Alert.alert('Select accounts', 'Please select spendable and savings accounts.');
-          return;
-        }
         const result = await addIncome({
           amount: amountNum,
           spendableAccountId: incSpendableId,
           protectedAccountId: incProtectedId,
           selectedSavingsAmount: savingsNum,
           date: dateStr,
+          categoryId: incCategoryId || undefined,
           note: note || undefined,
         });
         if (!result.success) {
@@ -145,14 +138,6 @@ export default function AddTransactionScreen() {
           return;
         }
       } else {
-        if (!fromAccountId || !toAccountId) {
-          Alert.alert('Select accounts', 'Please select both accounts.');
-          return;
-        }
-        if (isProtectedToSpendable && !reason.trim()) {
-          Alert.alert('Reason required', 'Please enter a reason for withdrawing from savings.');
-          return;
-        }
         const result = await addTransfer({
           amount: amountNum,
           fromAccountId,
@@ -172,6 +157,58 @@ export default function AddTransactionScreen() {
       router.back();
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!amount || amountNum <= 0) {
+      Alert.alert('Invalid amount', 'Please enter a valid amount.');
+      return;
+    }
+
+    if (txType === 'expense') {
+      if (!expAccountId) {
+        Alert.alert('Select account', 'Please select an account.');
+        return;
+      }
+      if (!expCategoryId) {
+        Alert.alert('Select category', 'Please select a category.');
+        return;
+      }
+      await executeSave();
+    } else if (txType === 'income') {
+      if (!incSpendableId || !incProtectedId) {
+        Alert.alert('Select accounts', 'Please select spendable and savings accounts.');
+        return;
+      }
+      await executeSave();
+    } else {
+      if (!fromAccountId || !toAccountId) {
+        Alert.alert('Select accounts', 'Please select both accounts.');
+        return;
+      }
+      if (isProtectedToSpendable && !reason.trim()) {
+        Alert.alert('Reason required', 'Please enter a reason for withdrawing from savings.');
+        return;
+      }
+
+      // Withdrawing from protected savings requires a reason AND a
+      // confirmation modal that gates the save (PRD MVP criterion #10) —
+      // this can't be skipped by just filling the reason field and tapping
+      // Save once; the user must explicitly confirm this specific action.
+      if (isProtectedToSpendable) {
+        Alert.alert(
+          'Confirm Withdrawal',
+          `Withdraw ${formatCurrency(amountNum)} from ${fromAccount?.name ?? 'Protected'} into ${toAccount?.name ?? 'Spendable'}? This increases your Discipline Debt and cannot be undone.`,
+          [
+            { text: 'Cancel', style: 'cancel' },
+            { text: 'Confirm Withdrawal', style: 'destructive', onPress: () => executeSave() },
+          ]
+        );
+        return;
+      }
+
+      await executeSave();
     }
   };
 
@@ -302,11 +339,11 @@ export default function AddTransactionScreen() {
               placeholder="No spendable accounts. Add one first."
             />
             <SelectRow
-              label="Category (optional)"
+              label="Category"
               value={expCategoryId}
-              options={categories.map((c) => ({ id: c.id, name: c.name }))}
+              options={expenseCategories.map((c) => ({ id: c.id, name: c.name }))}
               onSelect={(id) => setExpCategoryId((prev) => (prev === id ? '' : id))}
-              placeholder="No categories."
+              placeholder="No expense categories. Add one in Settings first."
             />
           </>
         )}
@@ -327,6 +364,13 @@ export default function AddTransactionScreen() {
               options={protectedAccounts.map((a) => ({ id: a.id, name: a.name }))}
               onSelect={setIncProtectedId}
               placeholder="No protected accounts."
+            />
+            <SelectRow
+              label="Category (optional)"
+              value={incCategoryId}
+              options={incomeCategories.map((c) => ({ id: c.id, name: c.name }))}
+              onSelect={(id) => setIncCategoryId((prev) => (prev === id ? '' : id))}
+              placeholder="No income categories."
             />
             {amountNum > 0 && (
               <View style={[styles.savingsPreview, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -390,18 +434,7 @@ export default function AddTransactionScreen() {
               label="To Account"
               value={toAccountId}
               options={accounts.filter((a) => a.id !== fromAccountId).map((a) => ({ id: a.id, name: a.name }))}
-              onSelect={(id) => {
-                setToAccountId(id);
-                const fa = accounts.find((a) => a.id === fromAccountId);
-                const ta = accounts.find((a) => a.id === id);
-                if (fa?.type === 'protected' && ta?.type === 'spendable') {
-                  Alert.alert(
-                    'Withdraw from Protected Savings',
-                    'This will increase your Discipline Debt. Only do this intentionally.',
-                    [{ text: 'I understand' }]
-                  );
-                }
-              }}
+              onSelect={setToAccountId}
               placeholder="No accounts."
             />
 

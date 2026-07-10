@@ -45,7 +45,7 @@ export default function LoanDetailScreen() {
     ...loanPayments
       .filter((p) => borrowerLoans.some((l) => l.id === p.loanId))
       .map((p): TimelineEntry => ({ kind: 'repayment', date: p.date, amount: p.amount, loanId: p.loanId })),
-  ].sort((a, b) => (a.date < b.date ? 1 : -1));
+  ].sort((a, b) => (a.date < b.date ? -1 : 1));
 
   if (borrowerLoans.length === 0) {
     return (

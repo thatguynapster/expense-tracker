@@ -16,6 +16,7 @@ import { useColors } from '@/hooks/useColors';
 import { CalendarPicker } from '@/components/CalendarPicker';
 import { useStore } from '@/store/useStore';
 import { formatCurrency } from '@/utils/format';
+import { sortAccounts } from '@/utils/sorting';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 
 function dateToStr(date: Date): string {
@@ -31,11 +32,12 @@ export default function RecordLoanRepaymentScreen() {
   const isWeb = Platform.OS === 'web';
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
 
-  const accounts = useStore((s) => s.accounts);
+  const accounts = sortAccounts(useStore((s) => s.accounts).filter((a) => !a.deletedAt));
   const loans = useStore((s) => s.loans);
   const recordLoanRepayment = useStore((s) => s.recordLoanRepayment);
   const outstanding = useStore((s) => s.getLoanOutstanding)(loanId);
   const loan = loans.find((l) => l.id === loanId);
+  const sourceAccount = accounts.find((a) => a.id === loan?.sourceAccountId);
 
   const [amount, setAmount] = useState('');
   const [destinationAccountId, setDestinationAccountId] = useState('');
@@ -140,7 +142,7 @@ export default function RecordLoanRepaymentScreen() {
         </View>
 
         <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Into Account</Text>
+          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Received Into</Text>
           <View style={styles.optionList}>
             {accounts.map((a) => (
               <TouchableOpacity
@@ -168,7 +170,7 @@ export default function RecordLoanRepaymentScreen() {
         <View style={[styles.infoBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
           <Feather name="info" size={14} color={colors.mutedForeground} style={{ marginRight: 8 }} />
           <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-            This credits the account directly and won’t show up as income.
+            Repayments always credit{sourceAccount ? ` ${sourceAccount.name}` : ' the account this loan was disbursed from'}, so its balance recovers regardless of where you actually received the cash. &quot;Received Into&quot; is just a record — it won&apos;t affect that account&apos;s balance. This won&apos;t show up as income.
           </Text>
         </View>
 

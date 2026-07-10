@@ -89,6 +89,12 @@ function RootLayoutNav() {
           headerShown: false,
         }}
       />
+      <Stack.Screen
+        name="budget"
+        options={{
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }

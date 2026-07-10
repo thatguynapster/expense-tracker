@@ -1,5 +1,6 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import type { Account, AppData, Category, DisciplineState, Loan, LoanPayment, Transaction } from './types';
+import { DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD } from '@/utils/calculations';
+import type { Account, AppData, Budget, Category, DisciplineState, Loan, LoanPayment, Transaction } from './types';
 
 const STORAGE_KEY = '@expense_tracker_v1';
 
@@ -11,21 +12,26 @@ export const DEFAULT_DATA: AppData = {
     { id: 'acc_savings', name: 'Savings Account', type: 'protected', balance: 0, createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
   ],
   categories: [
-    { id: 'cat_food', name: 'Food', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
-    { id: 'cat_transport', name: 'Transport', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
-    { id: 'cat_rent', name: 'Rent', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
-    { id: 'cat_utilities', name: 'Utilities', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
-    { id: 'cat_health', name: 'Health', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
-    { id: 'cat_family', name: 'Family', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
-    { id: 'cat_work', name: 'Work', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
-    { id: 'cat_entertainment', name: 'Entertainment', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
-    { id: 'cat_misc', name: 'Miscellaneous', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_food', name: 'Food', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_transport', name: 'Transport', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_rent', name: 'Rent', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_utilities', name: 'Utilities', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_health', name: 'Health', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_family', name: 'Family', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_work', name: 'Work', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_entertainment', name: 'Entertainment', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_misc', name: 'Miscellaneous', type: 'expense', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_salary', name: 'Salary', type: 'income', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_side_gigs', name: 'Side Gigs', type: 'income', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_bonus', name: 'Bonus', type: 'income', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
+    { id: 'cat_deposits', name: 'Deposits', type: 'income', createdAt: ts(), updatedAt: ts(), syncedAt: null, deletedAt: null },
   ],
   transactions: [],
   disciplineState: {
     id: 'discipline_main',
     totalWithdrawnFromSavings: 0,
     totalExtraSavings: 0,
+    safeToSpendWarningThreshold: DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
     createdAt: ts(),
     updatedAt: ts(),
     syncedAt: null,
@@ -33,6 +39,7 @@ export const DEFAULT_DATA: AppData = {
   },
   loans: [],
   loanPayments: [],
+  budgets: [],
 };
 
 /**
@@ -50,13 +57,28 @@ function migrate(data: AppData): AppData {
     deletedAt: record.deletedAt ?? null,
   });
 
+  // Categories predating the income/expense split default to 'expense' —
+  // the category picker only ever appeared on the expense form before this
+  // field existed, so every pre-existing category was necessarily created
+  // for expense use.
+  const withCategoryType = (category: Category): Category => ({
+    ...withSyncFields(category),
+    type: category.type ?? 'expense',
+  });
+
+  const withWarningThreshold = (state: DisciplineState): DisciplineState => ({
+    ...withSyncFields(state),
+    safeToSpendWarningThreshold: state.safeToSpendWarningThreshold ?? DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
+  });
+
   return {
     accounts: data.accounts.map((a: Account) => withSyncFields(a)),
-    categories: data.categories.map((c: Category) => withSyncFields(c)),
+    categories: data.categories.map((c: Category) => withCategoryType(c)),
     transactions: data.transactions.map((t: Transaction) => withSyncFields(t)),
-    disciplineState: withSyncFields(data.disciplineState as DisciplineState),
+    disciplineState: withWarningThreshold(data.disciplineState as DisciplineState),
     loans: (data.loans ?? []).map((l: Loan) => withSyncFields(l)),
     loanPayments: (data.loanPayments ?? []).map((p: LoanPayment) => withSyncFields(p)),
+    budgets: (data.budgets ?? []).map((b: Budget) => withSyncFields(b)),
   };
 }
 

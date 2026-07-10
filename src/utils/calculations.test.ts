@@ -1,6 +1,59 @@
 import { describe, expect, it } from 'vitest';
-import type { Loan, LoanPayment } from '@/lib/types';
-import { getLoanOutstanding, getLoansSummary, isLoanOverdue } from './calculations';
+import type { Account, Budget, Category, Loan, LoanPayment, Transaction } from '@/lib/types';
+import { calculateSafeToSpendToday, getBudgetPlannedAmount, getLoanOutstanding, getLoansSummary, getMonthSummary, getSafeToSpendStatus, isLoanOverdue } from './calculations';
+
+const account = (overrides: Partial<Account> = {}): Account => ({
+  id: 'acc_1',
+  name: 'Main',
+  type: 'spendable',
+  balance: 0,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  syncedAt: null,
+  deletedAt: null,
+  ...overrides,
+});
+
+describe('calculateSafeToSpendToday', () => {
+  it('excludes soft-deleted accounts from the usable balance', () => {
+    const accounts = [
+      account({ id: 'acc_1', balance: 100 }),
+      account({ id: 'acc_2', balance: 400, deletedAt: '2026-01-10T00:00:00.000Z' }),
+    ];
+    const { usableBalance } = calculateSafeToSpendToday(accounts, new Date('2026-01-15'));
+    expect(usableBalance).toBe(100);
+  });
+
+  it('excludes protected accounts from the usable balance', () => {
+    const accounts = [
+      account({ id: 'acc_1', balance: 100, type: 'spendable' }),
+      account({ id: 'acc_2', balance: 400, type: 'protected' }),
+    ];
+    const { usableBalance } = calculateSafeToSpendToday(accounts, new Date('2026-01-15'));
+    expect(usableBalance).toBe(100);
+  });
+});
+
+describe('getSafeToSpendStatus', () => {
+  it('is danger at or below zero, regardless of threshold', () => {
+    expect(getSafeToSpendStatus(0)).toBe('danger');
+    expect(getSafeToSpendStatus(-5)).toBe('danger');
+  });
+
+  it('uses the default 50 threshold when none is given', () => {
+    expect(getSafeToSpendStatus(49)).toBe('warning');
+    expect(getSafeToSpendStatus(50)).toBe('safe');
+  });
+
+  it('respects a custom warning threshold', () => {
+    expect(getSafeToSpendStatus(80, 100)).toBe('warning');
+    expect(getSafeToSpendStatus(100, 100)).toBe('safe');
+  });
+
+  it('is safe once above the threshold', () => {
+    expect(getSafeToSpendStatus(200, 100)).toBe('safe');
+  });
+});
 
 const loan = (overrides: Partial<Loan> = {}): Loan => ({
   id: 'loan_1',
@@ -136,5 +189,131 @@ describe('getLoansSummary', () => {
     ];
     const summary = getLoansSummary(loans, [], now);
     expect(summary.overdueCount).toBe(1);
+  });
+});
+
+const budget = (overrides: Partial<Budget> = {}): Budget => ({
+  id: 'budget_1',
+  categoryId: 'cat_food',
+  month: '2026-01',
+  plannedAmount: 200,
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  syncedAt: null,
+  deletedAt: null,
+  ...overrides,
+});
+
+const category = (overrides: Partial<Category> = {}): Category => ({
+  id: 'cat_food',
+  name: 'Food',
+  type: 'expense',
+  createdAt: '2026-01-01T00:00:00.000Z',
+  updatedAt: '2026-01-01T00:00:00.000Z',
+  syncedAt: null,
+  deletedAt: null,
+  ...overrides,
+});
+
+const transaction = (overrides: Partial<Transaction> = {}): Transaction => ({
+  id: 'tx_1',
+  type: 'expense',
+  amount: 50,
+  date: '2026-01-10T00:00:00.000Z',
+  categoryId: 'cat_food',
+  fromAccountId: 'acc_1',
+  toAccountId: null,
+  note: null,
+  reason: null,
+  savingsAccountId: null,
+  savingsAmount: null,
+  countsAsDebtRepayment: false,
+  createdAt: '2026-01-10T00:00:00.000Z',
+  updatedAt: '2026-01-10T00:00:00.000Z',
+  syncedAt: null,
+  deletedAt: null,
+  ...overrides,
+});
+
+describe('getBudgetPlannedAmount', () => {
+  it('returns 0 when no Budget record exists for that category+month', () => {
+    expect(getBudgetPlannedAmount([], 'cat_food', '2026-01')).toBe(0);
+  });
+
+  it('returns the plannedAmount for a matching category+month', () => {
+    const budgets = [budget({ categoryId: 'cat_food', month: '2026-01', plannedAmount: 300 })];
+    expect(getBudgetPlannedAmount(budgets, 'cat_food', '2026-01')).toBe(300);
+  });
+
+  it('does not match a different month for the same category', () => {
+    const budgets = [budget({ categoryId: 'cat_food', month: '2026-01', plannedAmount: 300 })];
+    expect(getBudgetPlannedAmount(budgets, 'cat_food', '2026-02')).toBe(0);
+  });
+
+  it('does not match a different category for the same month', () => {
+    const budgets = [budget({ categoryId: 'cat_food', month: '2026-01', plannedAmount: 300 })];
+    expect(getBudgetPlannedAmount(budgets, 'cat_rent', '2026-01')).toBe(0);
+  });
+
+  it('ignores a soft-deleted Budget record', () => {
+    const budgets = [budget({ categoryId: 'cat_food', month: '2026-01', deletedAt: '2026-01-15T00:00:00.000Z' })];
+    expect(getBudgetPlannedAmount(budgets, 'cat_food', '2026-01')).toBe(0);
+  });
+});
+
+describe('getMonthSummary', () => {
+  it('sums income and expenses within the given month only', () => {
+    const transactions = [
+      transaction({ id: 't1', type: 'income', amount: 1000, date: '2026-01-05T00:00:00.000Z' }),
+      transaction({ id: 't2', type: 'expense', amount: 100, date: '2026-01-10T00:00:00.000Z' }),
+      transaction({ id: 't3', type: 'expense', amount: 9999, date: '2026-02-01T00:00:00.000Z' }), // different month
+    ];
+    const summary = getMonthSummary('2026-01', transactions, [category()], []);
+    expect(summary.totalIncome).toBe(1000);
+    expect(summary.totalExpenses).toBe(100);
+    expect(summary.netSavings).toBe(900);
+  });
+
+  it('excludes soft-deleted transactions', () => {
+    const transactions = [
+      transaction({ type: 'expense', amount: 100, deletedAt: '2026-01-11T00:00:00.000Z' }),
+    ];
+    const summary = getMonthSummary('2026-01', transactions, [category()], []);
+    expect(summary.totalExpenses).toBe(0);
+  });
+
+  it('includes every expense category in plannedVsActual, even with zero activity and no budget', () => {
+    const summary = getMonthSummary('2026-01', [], [category({ id: 'cat_food' })], []);
+    expect(summary.plannedVsActual).toEqual([
+      { categoryId: 'cat_food', categoryName: 'Food', planned: 0, actual: 0 },
+    ]);
+  });
+
+  it('excludes income categories from plannedVsActual', () => {
+    const categories = [category({ id: 'cat_food', type: 'expense' }), category({ id: 'cat_salary', name: 'Salary', type: 'income' })];
+    const summary = getMonthSummary('2026-01', [], categories, []);
+    expect(summary.plannedVsActual.map((p) => p.categoryId)).toEqual(['cat_food']);
+  });
+
+  it('pulls planned amount from the matching Budget record', () => {
+    const budgets = [budget({ categoryId: 'cat_food', month: '2026-01', plannedAmount: 250 })];
+    const summary = getMonthSummary('2026-01', [], [category({ id: 'cat_food' })], budgets);
+    expect(summary.plannedVsActual[0]?.planned).toBe(250);
+  });
+
+  it('computes actual as the sum of that category\'s expense transactions in the month', () => {
+    const transactions = [
+      transaction({ id: 't1', categoryId: 'cat_food', amount: 30, date: '2026-01-05T00:00:00.000Z' }),
+      transaction({ id: 't2', categoryId: 'cat_food', amount: 20, date: '2026-01-12T00:00:00.000Z' }),
+      transaction({ id: 't3', categoryId: 'cat_rent', amount: 999, date: '2026-01-01T00:00:00.000Z' }), // different category
+    ];
+    const summary = getMonthSummary('2026-01', transactions, [category({ id: 'cat_food' })], []);
+    expect(summary.plannedVsActual[0]?.actual).toBe(50);
+  });
+
+  it('a budget set for one month never affects a different month\'s planned amount', () => {
+    const budgets = [budget({ categoryId: 'cat_food', month: '2026-02', plannedAmount: 500 })];
+    const summary = getMonthSummary('2026-01', [], [category({ id: 'cat_food' })], budgets);
+    expect(summary.plannedVsActual[0]?.planned).toBe(0);
   });
 });

@@ -17,6 +17,7 @@ import { useStore } from '@/store/useStore';
 import { TransactionItem } from '@/components/TransactionItem';
 import { formatCurrency, formatCurrencyShort } from '@/utils/format';
 import { getLoansSummary } from '@/utils/calculations';
+import { sortTransactions } from '@/utils/sorting';
 
 export default function HomeScreen() {
   const colors = useColors();
@@ -37,9 +38,7 @@ export default function HomeScreen() {
   const status = getSafeToSpendStatus();
   const loansSummary = getLoansSummary(loans, loanPayments);
 
-  const recentTransactions = [...transactions]
-    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-    .slice(0, 5);
+  const recentTransactions = sortTransactions(transactions).slice(0, 5);
 
   const statusColor =
     status === 'safe' ? colors.success :

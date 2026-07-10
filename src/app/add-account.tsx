@@ -23,8 +23,12 @@ export default function AddAccountScreen() {
   const { id } = useLocalSearchParams<{ id?: string }>();
 
   const accounts = useStore((s) => s.accounts);
+  const transactions = useStore((s) => s.transactions);
+  const loans = useStore((s) => s.loans);
+  const loanPayments = useStore((s) => s.loanPayments);
   const addAccount = useStore((s) => s.addAccount);
   const updateAccount = useStore((s) => s.updateAccount);
+  const deleteAccount = useStore((s) => s.deleteAccount);
 
   const isEditing = !!id;
   const existing = accounts.find((a) => a.id === id);
@@ -57,6 +61,40 @@ export default function AddAccountScreen() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDelete = async () => {
+    if (!id || !existing) return;
+    const isUsed =
+      transactions.some((t) => t.fromAccountId === id || t.toAccountId === id) ||
+      loans.some((l) => l.sourceAccountId === id) ||
+      loanPayments.some((p) => p.destinationAccountId === id);
+
+    if (isUsed) {
+      await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      Alert.alert(
+        'Cannot Delete',
+        `${existing.name} has existing transactions or loan activity and cannot be deleted.`
+      );
+      return;
+    }
+
+    Alert.alert(
+      'Delete Account',
+      `Delete ${existing.name}? This action is permanent and cannot be undone.`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            await deleteAccount(id);
+            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            router.back();
+          },
+        },
+      ]
+    );
   };
 
   return (
@@ -167,6 +205,16 @@ export default function AddAccountScreen() {
             </Text>
           </View>
         )}
+
+        {isEditing && (
+          <TouchableOpacity
+            style={[styles.deleteBtn, { backgroundColor: colors.dangerBg, borderColor: colors.danger + '40' }]}
+            onPress={handleDelete}
+          >
+            <Feather name="trash-2" size={15} color={colors.danger} style={{ marginRight: 8 }} />
+            <Text style={[styles.deleteBtnText, { color: colors.danger }]}>Delete Account</Text>
+          </TouchableOpacity>
+        )}
       </KeyboardAwareScrollViewCompat>
     </View>
   );
@@ -226,4 +274,14 @@ const styles = StyleSheet.create({
     borderWidth: 1,
   },
   infoText: { flex: 1, fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18 },
+  deleteBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    marginTop: 16,
+  },
+  deleteBtnText: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
 });
