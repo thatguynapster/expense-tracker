@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -9,7 +9,7 @@ import {
   Platform,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
@@ -41,6 +41,8 @@ export default function AddTransactionScreen() {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const isEditing = !!id;
   const accounts = sortAccounts(useStore((s) => s.accounts).filter((a) => !a.deletedAt));
   // Soft-deleted categories stay in local storage until sync purges them —
   // filter them out of the picker. Also split by type so the expense form
@@ -48,9 +50,14 @@ export default function AddTransactionScreen() {
   const activeCategories = useStore((s) => s.categories).filter((c) => !c.deletedAt);
   const expenseCategories = sortCategoriesAlphabetically(activeCategories.filter((c) => c.type === 'expense'));
   const incomeCategories = sortCategoriesAlphabetically(activeCategories.filter((c) => c.type === 'income'));
+  const transactions = useStore((s) => s.transactions);
+  const existing = transactions.find((t) => t.id === id && !t.deletedAt);
   const addIncome = useStore((s) => s.addIncome);
   const addExpense = useStore((s) => s.addExpense);
   const addTransfer = useStore((s) => s.addTransfer);
+  const updateIncome = useStore((s) => s.updateIncome);
+  const updateExpense = useStore((s) => s.updateExpense);
+  const updateTransfer = useStore((s) => s.updateTransfer);
   const disciplineDebt = useStore((s) => s.getDisciplineDebt)();
 
   const [txType, setTxType] = useState<TxType>('expense');
@@ -74,6 +81,28 @@ export default function AddTransactionScreen() {
   const [toAccountId, setToAccountId] = useState('');
   const [reason, setReason] = useState('');
   const [countsAsDebt, setCountsAsDebt] = useState(false);
+
+  useEffect(() => {
+    if (!existing) return;
+    setTxType(existing.type);
+    setAmount(String(existing.amount));
+    setNote(existing.note ?? '');
+    setDate(parseLocalDate(existing.date.split('T')[0]!));
+    if (existing.type === 'expense') {
+      setExpAccountId(existing.fromAccountId ?? '');
+      setExpCategoryId(existing.categoryId ?? '');
+    } else if (existing.type === 'income') {
+      setIncSpendableId(existing.toAccountId ?? '');
+      setIncProtectedId(existing.savingsAccountId ?? '');
+      setIncCategoryId(existing.categoryId ?? '');
+      setSavingsAmount(String(existing.savingsAmount ?? ''));
+    } else {
+      setFromAccountId(existing.fromAccountId ?? '');
+      setToAccountId(existing.toAccountId ?? '');
+      setReason(existing.reason ?? '');
+      setCountsAsDebt(existing.countsAsDebtRepayment ?? false);
+    }
+  }, [existing?.id]);
 
   const spendableAccounts = accounts.filter((a) => a.type === 'spendable');
   const protectedAccounts = accounts.filter((a) => a.type === 'protected');
@@ -103,13 +132,14 @@ export default function AddTransactionScreen() {
     setSaving(true);
     try {
       if (txType === 'expense') {
-        const result = await addExpense({
+        const params = {
           amount: amountNum,
           accountId: expAccountId,
           categoryId: expCategoryId,
           date: dateStr,
           note: note || undefined,
-        });
+        };
+        const result = isEditing ? await updateExpense(id, params) : await addExpense(params);
         if (!result.success) {
           Alert.alert('Error', result.error ?? 'Failed to save.');
           return;
@@ -124,7 +154,7 @@ export default function AddTransactionScreen() {
           return;
         }
       } else if (txType === 'income') {
-        const result = await addIncome({
+        const params = {
           amount: amountNum,
           spendableAccountId: incSpendableId,
           protectedAccountId: incProtectedId,
@@ -132,13 +162,14 @@ export default function AddTransactionScreen() {
           date: dateStr,
           categoryId: incCategoryId || undefined,
           note: note || undefined,
-        });
+        };
+        const result = isEditing ? await updateIncome(id, params) : await addIncome(params);
         if (!result.success) {
           Alert.alert('Error', result.error ?? 'Failed to save.');
           return;
         }
       } else {
-        const result = await addTransfer({
+        const params = {
           amount: amountNum,
           fromAccountId,
           toAccountId,
@@ -146,7 +177,8 @@ export default function AddTransactionScreen() {
           note: note || undefined,
           reason: reason || undefined,
           countsAsDebtRepayment: countsAsDebt,
-        });
+        };
+        const result = isEditing ? await updateTransfer(id, params) : await addTransfer(params);
         if (!result.success) {
           Alert.alert('Error', result.error ?? 'Failed to save.');
           return;
@@ -271,7 +303,9 @@ export default function AddTransactionScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
           <Feather name="x" size={22} color={colors.foreground} />
         </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Add Transaction</Text>
+        <Text style={[styles.headerTitle, { color: colors.foreground }]}>
+          {isEditing ? 'Edit Transaction' : 'Add Transaction'}
+        </Text>
         <TouchableOpacity
           style={[styles.saveBtn, { backgroundColor: saving ? colors.muted : colors.primary }]}
           onPress={handleSave}
@@ -289,8 +323,10 @@ export default function AddTransactionScreen() {
             style={[
               styles.typeTab,
               { backgroundColor: txType === t ? colors.card : 'transparent' },
+              isEditing && txType !== t && styles.typeTabDisabled,
             ]}
-            onPress={() => setTxType(t)}
+            onPress={() => !isEditing && setTxType(t)}
+            disabled={isEditing}
           >
             <Text
               style={[
@@ -303,6 +339,11 @@ export default function AddTransactionScreen() {
           </TouchableOpacity>
         ))}
       </View>
+      {isEditing && (
+        <Text style={[styles.editTypeNote, { color: colors.mutedForeground }]}>
+          Type can’t be changed when editing — delete and re-add for that.
+        </Text>
+      )}
 
       <KeyboardAwareScrollViewCompat
         style={{ flex: 1 }}
@@ -558,6 +599,14 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   typeTabText: { fontSize: 14, fontFamily: 'Inter_500Medium' },
+  typeTabDisabled: { opacity: 0.4 },
+  editTypeNote: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    marginHorizontal: 16,
+    marginTop: -8,
+    marginBottom: 16,
+  },
   formContent: { paddingHorizontal: 16 },
   fieldGroup: { marginBottom: 20 },
   fieldLabel: {

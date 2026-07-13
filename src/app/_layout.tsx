@@ -90,6 +90,12 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
+        name="transaction-detail"
+        options={{
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
         name="budget"
         options={{
           headerShown: false,

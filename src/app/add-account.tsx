@@ -66,7 +66,7 @@ export default function AddAccountScreen() {
   const handleDelete = async () => {
     if (!id || !existing) return;
     const isUsed =
-      transactions.some((t) => t.fromAccountId === id || t.toAccountId === id) ||
+      transactions.some((t) => t.fromAccountId === id || t.toAccountId === id || t.savingsAccountId === id) ||
       loans.some((l) => l.sourceAccountId === id) ||
       loanPayments.some((p) => p.destinationAccountId === id);
 

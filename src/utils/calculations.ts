@@ -1,6 +1,63 @@
 import type { Account, Budget, Category, DisciplineState, Loan, LoanPayment, SafeToSpendMetrics, SafeToSpendStatus, Transaction } from '@/lib/types';
 import { getDaysRemainingInMonth } from './month';
 
+export interface TransactionReversal {
+  accountDeltas: { accountId: string; delta: number }[];
+  disciplineDelta: { totalWithdrawnFromSavings: number; totalExtraSavings: number };
+}
+
+/**
+ * The exact inverse of what `addExpense`/`addIncome`/`addTransfer` applied
+ * when the transaction was created — used to undo a transaction before
+ * deleting or replacing it (edit = delete old + create new). Account type
+ * is locked for life (§5.5), so looking up `accounts` by the transaction's
+ * stored account ids always reflects what those accounts were at creation
+ * time too — no need to have stored the account types on the transaction
+ * itself.
+ */
+export function getTransactionReversal(transaction: Transaction, accounts: Account[]): TransactionReversal {
+  const accountDeltas: { accountId: string; delta: number }[] = [];
+  let totalWithdrawnFromSavings = 0;
+  let totalExtraSavings = 0;
+
+  if (transaction.type === 'expense') {
+    if (transaction.fromAccountId) {
+      accountDeltas.push({ accountId: transaction.fromAccountId, delta: transaction.amount });
+    }
+  } else if (transaction.type === 'income') {
+    const savingsAmount = transaction.savingsAmount ?? 0;
+    const spendableAmount = transaction.amount - savingsAmount;
+    if (transaction.toAccountId) {
+      accountDeltas.push({ accountId: transaction.toAccountId, delta: -spendableAmount });
+    }
+    if (transaction.savingsAccountId) {
+      accountDeltas.push({ accountId: transaction.savingsAccountId, delta: -savingsAmount });
+    }
+    const minimumSavings = transaction.amount * 0.1;
+    totalExtraSavings -= Math.max(0, savingsAmount - minimumSavings);
+  } else {
+    if (transaction.fromAccountId) {
+      accountDeltas.push({ accountId: transaction.fromAccountId, delta: transaction.amount });
+    }
+    if (transaction.toAccountId) {
+      accountDeltas.push({ accountId: transaction.toAccountId, delta: -transaction.amount });
+    }
+
+    const fromAccount = accounts.find((a) => a.id === transaction.fromAccountId);
+    const toAccount = accounts.find((a) => a.id === transaction.toAccountId);
+    const isProtectedToSpendable = fromAccount?.type === 'protected' && toAccount?.type === 'spendable';
+    const isSpendableToProtected = fromAccount?.type === 'spendable' && toAccount?.type === 'protected';
+
+    if (isProtectedToSpendable) {
+      totalWithdrawnFromSavings -= transaction.amount;
+    } else if (isSpendableToProtected && transaction.countsAsDebtRepayment) {
+      totalExtraSavings -= transaction.amount;
+    }
+  }
+
+  return { accountDeltas, disciplineDelta: { totalWithdrawnFromSavings, totalExtraSavings } };
+}
+
 export function calculateSafeToSpendToday(
   accounts: Account[],
   currentDate?: Date

@@ -2,41 +2,37 @@
 
 This covers how to build an installable Android APK from this repo **without** an EAS/Expo account or a Google Play Console account — purely local tooling, for sideloading onto your own device(s) until you're ready to publish properly.
 
-## Current status (as of 2026-07-08)
-
-`pnpm run build:apk` (see §"Shortcut" below) correctly runs env var setup → `expo prebuild` → `gradlew assembleRelease` in sequence, and the sync-related `.env` config is confirmed loading correctly during prebuild. However, the build itself still fails on this machine with a **Windows path-length problem**, not a project bug:
-
-```
-CMake Warning: The object file directory [...] has 223-245 characters. The maximum full path
-to an object file is 250 characters (see CMAKE_OBJECT_PATH_MAX). [...]
-ninja: error: manifest 'build.ninja' still dirty after 100 tries
-BUILD FAILED
-```
-
-**Root cause:** the repo's path (`C:\PROJECTS\Mobile\expense-tracker\`) combined with pnpm's nested dependency layout (`node_modules\.pnpm\react-native-worklets@0.5.1_<hash>\node_modules\react-native-worklets\...`) pushes CMake's native-build object file paths for modules like `react-native-worklets`, `react-native-screens`, and `expo-modules-core` past its internal 250-character limit. Windows' own long-path support is already enabled on this machine (`LongPathsEnabled=1` in the registry) and doesn't help, since CMake enforces its own conservative limit for portability, independent of the OS.
-
-**Important: `subst` (temporary drive-letter mapping) does NOT fix this**, despite initially looking like the obvious fix — this was tried and confirmed not to work. pnpm's `node_modules/.pnpm/...` structure uses NTFS junctions that store the *real* absolute target path internally; when CMake resolves a path through a `subst`'d drive letter, the junction still resolves back to the real (long) underlying path, so nothing is actually shortened where it matters. Worse, mixing a `subst` alias with tools that resolve to the real path elsewhere (Gradle's JS-bundling step hit this) causes a *different* failure: `"this and base files have different roots"`.
-
-**The actual fix: physically relocate the project to a shorter real path** (e.g. `C:\dev\expense-tracker\`), not an alias. This is disruptive (changes your real working directory; any open editors/terminals need to be pointed at the new location) and was not completed as of this writing — attempting it hit file locks from a running editor (VS Code) holding the directory open, and a subsequent move/copy attempt was interrupted mid-operation and needs careful manual reconciliation before it's safe to retry. If you're picking this back up: verify the current location and integrity of the project (`git status`, `git log`) before running any further move/copy commands, and prefer a plain OS-level move (Windows Explorer cut-and-paste, or `Move-Item` in a single command with no other tool/editor holding the folder open) over `robocopy /MOVE`, which deletes source files incrementally as it copies and leaves things in a genuinely inconsistent state if interrupted.
-
-**Alternative that avoids the whole path-length problem:** `eas build --platform android` (Expo's cloud build service) builds on Expo's Linux infrastructure instead of locally, sidestepping this Windows-specific issue entirely. Requires a free Expo account; see §7 below.
-
-Everything from step 1 onward in this doc describes the intended local flow and is correct up through native module configuration — it just hasn't produced a completed APK on this machine yet, for the reasons above.
-
 This project uses Expo's **managed workflow** (no `android/` folder is committed). To produce a native APK we generate that folder on demand (`expo prebuild`) and build it with Gradle directly. This is the standard "bare" escape hatch and is fully supported by Expo.
 
-## Shortcut: one command for steps 3–4
+## Known issue: intermittent build failures under system load
 
-Once the one-time setup in §1 is done (Android SDK/JDK installed, `.env` created), steps 3 and 4 below (prebuild + Gradle build, with the right env vars set) are chained into a single script:
-
-```bash
-cd "C:\PROJECTS\Mobile\expense-tracker\artifacts\expense-tracker"
-pnpm run build:apk
+Local Android builds on this machine have, in the past, failed intermittently with either:
+```
+ninja: error: manifest 'build.ninja' still dirty after 100 tries
+```
+or
+```
+Failed to run Gradle Worker Daemon ... connection attempt hit a timeout after 120.0 seconds ... build machine is extremely loaded
 ```
 
-This runs `scripts/build-apk.sh` (full path: `C:\PROJECTS\Mobile\expense-tracker\artifacts\expense-tracker\scripts\build-apk.sh`), which sets `ANDROID_HOME`/`JAVA_HOME`/`PATH` for just that run, then runs `expo prebuild` and `gradlew assembleRelease` in sequence. Output lands at the same path as always: `android\app\build\outputs\apk\release\app-release.apk`.
+**Root cause: insufficient free RAM/CPU while other heavy apps (Android Studio, VS Code, browser) are running** — not a project-specific bug, and not Windows path length. A multi-day investigation chased several false leads first (path length / `CMAKE_OBJECT_PATH_MAX`, Windows Defender real-time scanning, stale build caches, and even a full project rebuild from a fresh scaffold to rule out the original project's Replit/pnpm-monorepo origins). The fresh scaffold got further — JS bundling and CMake native compiles succeeded cleanly — but still hit the same Gradle Worker Daemon timeout under load, and closing other programs resolved it there too, confirming machine load was the actual cause all along.
 
-**Why a `.sh` file instead of one line directly in `package.json`:** `pnpm run` on this Windows machine spawns `cmd.exe` to execute script strings (confirmed by testing directly — not a guess), which doesn't understand `export`, `$VAR`, or `&&`-chained POSIX syntax. Wrapping everything in a `bash -c "..."` one-liner works in principle, but the Android Studio JDK path (`C:\Program Files\Android\Android Studio\jbr`) contains spaces, which forces enough nested quote-escaping between JSON, cmd.exe, and bash simultaneously that it becomes genuinely fragile (this was tried and broke on unrelated `(x86)`-style parentheses elsewhere in the system `PATH`). A dedicated `.sh` file sidesteps all of that — `package.json` just needs `bash scripts/build-apk.sh` as the script value, and cmd.exe only has to successfully launch `bash.exe` with a plain file path, no complex quoting involved.
+**If a local build fails or hangs:** close other heavy applications (Android Studio, browser, VS Code, etc.) and re-run the build in isolation before investigating anything more exotic (path length, cache clearing, antivirus, ninja/cmake versions). The current project also lives at a short path (`C:\PROJECTS\Mobile\folio-expense-tracker`), so path length isn't a realistic factor here regardless.
+
+**Alternative that sidesteps local machine load entirely:** `eas build --platform android` (Expo's cloud build service) builds on Expo's own infrastructure instead of locally. Requires a free Expo account; see §7 below.
+
+## Shortcut: one command for prebuild + Gradle build
+
+Once the one-time setup in §1 is done (Android SDK/JDK env vars set, `.env` created), steps 3 and 4 below are chained into a single npm script — from the project root (`C:\PROJECTS\Mobile\folio-expense-tracker`):
+
+```bash
+npm run build:apk:dev    # debug build, output: android/app/build/outputs/apk/debug/app-debug.apk
+npm run build:apk:prod   # release build, output: android/app/build/outputs/apk/release/app-release.apk
+```
+
+Both run `expo prebuild --platform android --no-install && cd android && gradlew.bat assembleDebug|assembleRelease` (see `package.json`). Unlike the earlier version of this doc, these plain npm scripts **do not** set `ANDROID_HOME`/`JAVA_HOME` for you — make sure those are already set in your shell (§1) or as permanent user environment variables before running either command.
+
+There's also a `scripts/build-apk.sh` in the repo that sets those env vars for you before building — but it's currently **not** wired into `package.json` and still references the old `pnpm`-based workflow, so it's out of date. Don't rely on it as written; either set the env vars yourself first (§1), or ask for it to be updated to match the current npm-based scripts if you want that convenience back.
 
 ---
 
@@ -78,13 +74,13 @@ If you don't have Android Studio / the SDK on a given machine, install Android S
 
 ### Sync config (separate from the Android SDK vars above)
 
-The app's cloud-sync feature (§Priority 1 in `PRD_REVIEW_TASKS.md`) needs its own config, read from a `.env` file — **not** an OS-level environment variable, and unrelated to `ANDROID_HOME`/`JAVA_HOME`.
+The app's cloud-sync feature needs its own config, read from a `.env` file — **not** an OS-level environment variable, and unrelated to `ANDROID_HOME`/`JAVA_HOME`.
 
-Full path: **`C:\PROJECTS\Mobile\expense-tracker\artifacts\expense-tracker\.env`**
+Full path: **`C:\PROJECTS\Mobile\folio-expense-tracker\.env`**
 
 This file is gitignored and must be created manually on each machine you build from. Copy the template and fill in real values:
 ```bash
-cp "C:\PROJECTS\Mobile\expense-tracker\artifacts\expense-tracker\.env.example" "C:\PROJECTS\Mobile\expense-tracker\artifacts\expense-tracker\.env"
+cp "C:\PROJECTS\Mobile\folio-expense-tracker\.env.example" "C:\PROJECTS\Mobile\folio-expense-tracker\.env"
 ```
 Then edit it to contain:
 ```
@@ -93,50 +89,52 @@ EXPO_PUBLIC_SYNC_API_KEY="<the real SYNC_API_KEY value, matching what's set in f
 ```
 Both must be prefixed `EXPO_PUBLIC_` — Expo's Metro bundler only inlines env vars with that exact prefix into the built JS bundle. This file is read automatically the moment you run `expo prebuild` (step 3 below) or `expo start` — nothing else needs to source it manually. If either variable is missing, the app still builds and runs fine; sync is just treated as unconfigured (a silent no-op, never a crash).
 
+**Dev vs. release builds read different `.env` files.** Expo loads env files based on `NODE_ENV`, which it sets automatically: `development` for `expo start` / `gradlew assembleDebug` (i.e. `npm run build:apk:dev`), `production` for `gradlew assembleRelease` (i.e. `npm run build:apk:prod`). Precedence per mode is `.env.<mode>.local` → `.env.local` → `.env.<mode>` → `.env`. In practice: the base `.env` above currently holds the real production values and doubles as the production fallback. If you want the dev build pointed at a different (e.g. local) sync server without touching that, add a `.env.development.local` with the override — it's covered by the `.env*.local` gitignore rule and only ever gets picked up by dev/debug builds, never `build:apk:prod`.
+
 ---
 
 ## 2. Install workspace dependencies
 
-From the workspace root (`C:\PROJECTS\Mobile\expense-tracker`):
+From the project root (`C:\PROJECTS\Mobile\folio-expense-tracker`):
 ```bash
-pnpm install
+npm install
 ```
-(If pnpm ever stops with `ERR_PNPM_IGNORED_BUILDS`, run `pnpm approve-builds --all` once and re-run install — this approves native postinstall scripts like esbuild's binary download, which is a pnpm supply-chain safety gate, not an error in the project.)
 
 ---
 
 ## 3. Generate the native Android project
 
-From `artifacts/expense-tracker`:
+From the project root:
 ```bash
-pnpm exec expo prebuild --platform android --no-install
+npx expo prebuild --platform android --no-install
 ```
 
-This creates an `android/` folder (gitignored by default via the app's `.gitignore`) containing a full native Gradle project derived from `app.json`. Re-run this command any time you change `app.json` (name, icon, package id, permissions, plugins) — it's safe to re-run; it regenerates the native project from scratch each time.
+This creates an `android/` folder (gitignored) containing a full native Gradle project derived from `app.json`. Re-run this command any time you change `app.json` (name, icon, package id, permissions, plugins) — it's safe to re-run; it regenerates the native project from scratch each time.
 
 Notable config already set for you in `app.json`:
-- `expo.android.package` — the Android application ID (`com.andyosei.folio` as of this writing). **This cannot be changed after you've installed the app on a device without uninstalling first** — Android treats a different package id as a different app.
+- `expo.android.package` — the Android application ID (`com.anonymous.folioexpensetracker` as of this writing). **This cannot be changed after you've installed the app on a device without uninstalling first** — Android treats a different package id as a different app.
 - `expo.name` / `expo.slug` — display name and internal slug.
 
 ---
 
-## 4. Build the release APK
+## 4. Build the APK
 
-From `artifacts/expense-tracker/android`:
+From `android`:
 ```bash
-./gradlew assembleRelease
+./gradlew assembleRelease   # or assembleDebug for a debug build
 ```
+(`npm run build:apk:prod` / `build:apk:dev` from the project root do steps 3–4 together — see the Shortcut section above. Those npm scripts invoke `gradlew.bat` directly since `npm run` spawns them via `cmd.exe` on Windows; `./gradlew` works the same way from Git Bash if you're running the steps manually.)
 
 First run will take several minutes (Gradle downloads its own toolchain + all native Android dependencies the first time; subsequent builds are much faster thanks to the Gradle cache). Output APK lands at:
 ```
-artifacts/expense-tracker/android/app/build/outputs/apk/release/app-release.apk
+android/app/build/outputs/apk/release/app-release.apk   (or .../debug/app-debug.apk)
 ```
 
 ### Troubleshooting: NDK auto-download stalls or fails
 
 By default, `expo prebuild` configures the project to require the exact NDK/build-tools versions Expo's current SDK recommends (as of this build: NDK `27.1.12297006`, build-tools `36.0.0`). If those exact versions aren't already installed, Gradle tries to download them automatically via the SDK manager — and on a slow or flaky connection this can silently stall for a very long time (observed: stuck downloading the NDK with zero progress for 15+ minutes), or fail outright under `--offline`.
 
-If you already have a *different* NDK/build-tools version installed (check with `ls "$ANDROID_HOME/ndk"` and `ls "$ANDROID_HOME/build-tools"`) and don't want to wait for a fresh ~1GB download, force Gradle to use what's already there by adding this to `artifacts/expense-tracker/android/build.gradle`, right after the `apply plugin: "expo-root-project"` line:
+If you already have a *different* NDK/build-tools version installed (check with `ls "$ANDROID_HOME/ndk"` and `ls "$ANDROID_HOME/build-tools"`) and don't want to wait for a fresh ~1GB download, force Gradle to use what's already there by adding this to `android/build.gradle`, right after the `apply plugin: "expo-root-project"` line:
 ```groovy
 ext {
   ndkVersion = "27.0.12077973"       // replace with your installed version
@@ -145,14 +143,12 @@ ext {
 ```
 **This edit is lost every time you re-run `expo prebuild`** (it regenerates `android/` from scratch), so you'll need to reapply it after every prebuild if you hit this again. Don't combine this with `--offline` — Gradle still needs a network round-trip to *verify* an already-installed SDK component even when no download is actually required, and `--offline` blocks that verification, causing a different failure ("NDK not configured").
 
-### Troubleshooting: CMake object-path-length errors
+### Troubleshooting: build hangs or fails under system load
 
-See "Current status" at the top of this doc — this is the currently-unresolved blocker on this machine. Short version: shorten the real path the project lives at (not a `subst` alias, which doesn't help — see above), or use EAS Build instead (§7).
+See "Known issue" at the top of this doc — this is the realistic failure mode on this machine, not path length or a project bug. Close other heavy applications and retry before investigating anything else.
 
 ### About signing
 Expo's generated template configures the `release` build type to sign with the same **debug keystore** (`android/app/debug.keystore`) that's used for development builds. This is intentional for local/manual builds — it produces a fully functional, installable release APK. It is **not** suitable for the Play Store (Play requires you to manage your own upload key), but for sideloading onto your own phone it's exactly what you want and requires zero extra setup.
-
-If you'd rather build a debug APK instead (slightly larger, includes dev tooling, but never needs Metro/JS bundling changes to work standalone — actually `assembleRelease` already bundles JS in, so this is rarely necessary): `./gradlew assembleDebug`, output at `android/app/build/outputs/apk/debug/app-debug.apk`.
 
 ---
 
@@ -179,10 +175,10 @@ Each time you make code changes, repeat steps 3–4 above and reinstall (`adb in
 
 You do **not** need to re-run `expo prebuild` for ordinary JS/TSX changes (screens, store logic, styling) — only when you change `app.json` (icon, name, permissions, plugins) or add a native module. For a normal code change:
 ```bash
-cd artifacts/expense-tracker/android
+cd android
 ./gradlew assembleRelease
 ```
-Gradle bundles the current JS into the APK automatically as part of `assembleRelease` (no separate Metro/bundle step needed, unlike Expo Go).
+Or just re-run `npm run build:apk:prod` (or `build:apk:dev`) from the project root — it re-prebuilds and rebuilds in one step; the prebuild step is safe to re-run even when nothing native changed. Gradle bundles the current JS into the APK automatically as part of `assembleRelease`/`assembleDebug` (no separate Metro/bundle step needed, unlike Expo Go).
 
 ---
 

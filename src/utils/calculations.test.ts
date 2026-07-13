@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Account, Budget, Category, Loan, LoanPayment, Transaction } from '@/lib/types';
-import { calculateSafeToSpendToday, getBudgetPlannedAmount, getLoanOutstanding, getLoansSummary, getMonthSummary, getSafeToSpendStatus, isLoanOverdue } from './calculations';
+import { calculateSafeToSpendToday, getBudgetPlannedAmount, getLoanOutstanding, getLoansSummary, getMonthSummary, getSafeToSpendStatus, getTransactionReversal, isLoanOverdue } from './calculations';
 
 const account = (overrides: Partial<Account> = {}): Account => ({
   id: 'acc_1',
@@ -31,6 +31,134 @@ describe('calculateSafeToSpendToday', () => {
     ];
     const { usableBalance } = calculateSafeToSpendToday(accounts, new Date('2026-01-15'));
     expect(usableBalance).toBe(100);
+  });
+});
+
+const reversalTransaction = (overrides: Partial<Transaction> = {}): Transaction => ({
+  id: 'tx_1',
+  type: 'expense',
+  amount: 20,
+  date: '2026-01-05T00:00:00.000Z',
+  categoryId: 'cat_food',
+  fromAccountId: 'acc_main',
+  toAccountId: null,
+  note: null,
+  reason: null,
+  savingsAccountId: null,
+  savingsAmount: null,
+  countsAsDebtRepayment: false,
+  createdAt: '2026-01-05T00:00:00.000Z',
+  updatedAt: '2026-01-05T00:00:00.000Z',
+  syncedAt: null,
+  deletedAt: null,
+  ...overrides,
+});
+
+describe('getTransactionReversal', () => {
+  it('reverses an expense by crediting the source account back', () => {
+    const reversal = getTransactionReversal(
+      reversalTransaction({ type: 'expense', amount: 50, fromAccountId: 'acc_main' }),
+      [],
+    );
+    expect(reversal.accountDeltas).toEqual([{ accountId: 'acc_main', delta: 50 }]);
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: 0 });
+  });
+
+  it('reverses income by debiting both the spendable and savings accounts, and the extra-savings credit', () => {
+    // amount 100, saved 30 (min is 10) -> spendable got 70, savings got 30, extraSavings +20 at creation
+    const reversal = getTransactionReversal(
+      reversalTransaction({
+        type: 'income',
+        amount: 100,
+        toAccountId: 'acc_spendable',
+        savingsAccountId: 'acc_protected',
+        savingsAmount: 30,
+      }),
+      [],
+    );
+    expect(reversal.accountDeltas).toEqual([
+      { accountId: 'acc_spendable', delta: -70 },
+      { accountId: 'acc_protected', delta: -30 },
+    ]);
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: -20 });
+  });
+
+  it('reverses income at exactly the minimum savings rate with no extra-savings delta', () => {
+    const reversal = getTransactionReversal(
+      reversalTransaction({
+        type: 'income',
+        amount: 100,
+        toAccountId: 'acc_spendable',
+        savingsAccountId: 'acc_protected',
+        savingsAmount: 10,
+      }),
+      [],
+    );
+    expect(reversal.disciplineDelta.totalExtraSavings).toBe(0);
+  });
+
+  it('reverses a plain transfer between two spendable accounts with no discipline effect', () => {
+    const accounts = [
+      account({ id: 'acc_a', type: 'spendable' }),
+      account({ id: 'acc_b', type: 'spendable' }),
+    ];
+    const reversal = getTransactionReversal(
+      reversalTransaction({ type: 'transfer', amount: 40, fromAccountId: 'acc_a', toAccountId: 'acc_b' }),
+      accounts,
+    );
+    expect(reversal.accountDeltas).toEqual([
+      { accountId: 'acc_a', delta: 40 },
+      { accountId: 'acc_b', delta: -40 },
+    ]);
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: 0 });
+  });
+
+  it('reverses a protected-to-spendable transfer, undoing the discipline debt increase', () => {
+    const accounts = [
+      account({ id: 'acc_protected', type: 'protected' }),
+      account({ id: 'acc_spendable', type: 'spendable' }),
+    ];
+    const reversal = getTransactionReversal(
+      reversalTransaction({ type: 'transfer', amount: 60, fromAccountId: 'acc_protected', toAccountId: 'acc_spendable' }),
+      accounts,
+    );
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: -60, totalExtraSavings: 0 });
+  });
+
+  it('reverses a spendable-to-protected debt-repayment transfer, undoing the extra-savings credit', () => {
+    const accounts = [
+      account({ id: 'acc_spendable', type: 'spendable' }),
+      account({ id: 'acc_protected', type: 'protected' }),
+    ];
+    const reversal = getTransactionReversal(
+      reversalTransaction({
+        type: 'transfer',
+        amount: 25,
+        fromAccountId: 'acc_spendable',
+        toAccountId: 'acc_protected',
+        countsAsDebtRepayment: true,
+      }),
+      accounts,
+    );
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: -25 });
+  });
+
+  it('does not touch discipline state for a spendable-to-protected transfer not marked as debt repayment', () => {
+    const accounts = [
+      account({ id: 'acc_spendable', type: 'spendable' }),
+      account({ id: 'acc_protected', type: 'protected' }),
+    ];
+    const reversal = getTransactionReversal(
+      reversalTransaction({
+        type: 'transfer',
+        amount: 25,
+        fromAccountId: 'acc_spendable',
+        toAccountId: 'acc_protected',
+        countsAsDebtRepayment: false,
+      }),
+      accounts,
+    );
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: 0 });
   });
 });
 

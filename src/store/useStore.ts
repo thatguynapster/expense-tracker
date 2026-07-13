@@ -20,6 +20,7 @@ import {
   getLoanOutstanding,
   getBudgetPlannedAmount,
   getMonthSummary,
+  getTransactionReversal,
   DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
   type MonthSummary,
 } from '@/utils/calculations';
@@ -104,6 +105,13 @@ interface AppStore {
   addIncome: (p: AddIncomeParams) => Promise<{ success: boolean; error?: string }>;
   addExpense: (p: AddExpenseParams) => Promise<{ success: boolean; error?: string; willGoDanger?: boolean }>;
   addTransfer: (p: AddTransferParams) => Promise<{ success: boolean; error?: string }>;
+
+  /** Edits replace the transaction: a new one is created via addIncome/addExpense/addTransfer, and only on success is the old one reversed and tombstoned — a failed edit never destroys the original. Type is not editable; delete and re-add for that. */
+  updateIncome: (id: string, p: AddIncomeParams) => Promise<{ success: boolean; error?: string }>;
+  updateExpense: (id: string, p: AddExpenseParams) => Promise<{ success: boolean; error?: string; willGoDanger?: boolean }>;
+  updateTransfer: (id: string, p: AddTransferParams) => Promise<{ success: boolean; error?: string }>;
+  /** Reverses the transaction's effect on account balances and discipline state (via getTransactionReversal), then tombstones it. */
+  deleteTransaction: (id: string) => Promise<{ success: boolean; error?: string }>;
 
   /** Loan disbursement: debits sourceAccountId, does not create a Transaction (per PRD §4.5 — not an expense). */
   addLoan: (p: AddLoanParams) => Promise<{ success: boolean; error?: string }>;
@@ -429,6 +437,63 @@ export const useStore = create<AppStore>((set, get) => ({
     }
 
     const transactions = [...get().transactions, transaction];
+    set({ accounts, transactions, disciplineState });
+    await persist({ ...get(), accounts, transactions, disciplineState });
+    void get().syncNow();
+
+    return { success: true };
+  },
+
+  updateIncome: async (id, p) => {
+    const old = get().transactions.find((t) => t.id === id && !t.deletedAt);
+    if (!old) return { success: false, error: 'Transaction not found.' };
+    const result = await get().addIncome(p);
+    if (result.success) await get().deleteTransaction(id);
+    return result;
+  },
+
+  updateExpense: async (id, p) => {
+    const old = get().transactions.find((t) => t.id === id && !t.deletedAt);
+    if (!old) return { success: false, error: 'Transaction not found.' };
+    const result = await get().addExpense(p);
+    if (result.success) await get().deleteTransaction(id);
+    return result;
+  },
+
+  updateTransfer: async (id, p) => {
+    const old = get().transactions.find((t) => t.id === id && !t.deletedAt);
+    if (!old) return { success: false, error: 'Transaction not found.' };
+    const result = await get().addTransfer(p);
+    if (result.success) await get().deleteTransaction(id);
+    return result;
+  },
+
+  deleteTransaction: async (id) => {
+    const transaction = get().transactions.find((t) => t.id === id && !t.deletedAt);
+    if (!transaction) return { success: false, error: 'Transaction not found.' };
+
+    const reversal = getTransactionReversal(transaction, get().accounts);
+    const deltaMap = new Map(reversal.accountDeltas.map((d) => [d.accountId, d.delta]));
+    const accounts = get().accounts.map((a) =>
+      deltaMap.has(a.id) ? { ...a, balance: a.balance + deltaMap.get(a.id)!, updatedAt: now(), syncedAt: null } : a
+    );
+
+    const { totalWithdrawnFromSavings, totalExtraSavings } = reversal.disciplineDelta;
+    const disciplineState =
+      totalWithdrawnFromSavings !== 0 || totalExtraSavings !== 0
+        ? {
+            ...get().disciplineState,
+            totalWithdrawnFromSavings: get().disciplineState.totalWithdrawnFromSavings + totalWithdrawnFromSavings,
+            totalExtraSavings: get().disciplineState.totalExtraSavings + totalExtraSavings,
+            updatedAt: now(),
+            syncedAt: null,
+          }
+        : get().disciplineState;
+
+    const transactions = get().transactions.map((t) =>
+      t.id === id ? { ...t, deletedAt: now(), updatedAt: now(), syncedAt: null } : t
+    );
+
     set({ accounts, transactions, disciplineState });
     await persist({ ...get(), accounts, transactions, disciplineState });
     void get().syncNow();

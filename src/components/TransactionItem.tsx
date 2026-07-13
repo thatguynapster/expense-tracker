@@ -1,5 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { router } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import { useColors } from '@/hooks/useColors';
 import type { Transaction, Account, Category } from '@/lib/types';
@@ -60,7 +61,11 @@ export function TransactionItem({ transaction, accounts, categories }: Props) {
   }
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}>
+    <TouchableOpacity
+      style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]}
+      onPress={() => router.push({ pathname: '/transaction-detail', params: { id: transaction.id } })}
+      activeOpacity={0.7}
+    >
       <View style={[styles.iconWrap, { backgroundColor: iconBg }]}>
         <Feather name={iconName as any} size={18} color={iconColor} />
       </View>
@@ -69,8 +74,13 @@ export function TransactionItem({ transaction, accounts, categories }: Props) {
           {label}
         </Text>
         <Text style={[styles.sublabel, { color: colors.mutedForeground }]} numberOfLines={1}>
-          {sublabel || transaction.note || formatDateShort(transaction.date)}
+          {sublabel || formatDateShort(transaction.date)}
         </Text>
+        {transaction.note && (
+          <Text style={[styles.note, { color: colors.mutedForeground }]} numberOfLines={1}>
+            {transaction.note}
+          </Text>
+        )}
       </View>
       <View style={styles.right}>
         <Text style={[styles.amount, { color: amountColor }]}>{amountStr}</Text>
@@ -78,7 +88,7 @@ export function TransactionItem({ transaction, accounts, categories }: Props) {
           {formatDateShort(transaction.date)}
         </Text>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 }
 
@@ -111,6 +121,12 @@ const styles = StyleSheet.create({
   sublabel: {
     fontSize: 12,
     fontFamily: 'Inter_400Regular',
+  },
+  note: {
+    fontSize: 12,
+    fontFamily: 'Inter_400Regular',
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   right: {
     alignItems: 'flex-end',

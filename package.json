@@ -56,7 +56,8 @@
 		"web": "expo start --web",
 		"lint": "expo lint",
 		"test": "vitest run",
-		"build:apk": "expo prebuild --platform android --no-install && cd android && gradlew.bat assembleRelease"
+		"build:apk:dev": "expo prebuild --platform android --no-install && cd android && gradlew.bat assembleDebug",
+		"build:apk:prod": "expo prebuild --platform android --no-install && cd android && gradlew.bat assembleRelease"
 	},
 	"private": true
 }
