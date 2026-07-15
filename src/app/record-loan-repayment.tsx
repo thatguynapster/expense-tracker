@@ -1,18 +1,19 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Alert,
-  Platform,
-} from 'react-native';
+import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
-import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useColors } from '@/hooks/useColors';
+
+import {
+  AmountField,
+  ChipGroup,
+  Field,
+  InfoBanner,
+  SaveButton,
+  ScreenHeader,
+  TextField,
+} from '@/components/ui';
+import { layout, palette, type } from '@/theme/theme';
 import { CalendarPicker } from '@/components/CalendarPicker';
 import { useStore } from '@/store/useStore';
 import { formatCurrency } from '@/utils/format';
@@ -27,7 +28,6 @@ function dateToStr(date: Date): string {
 }
 
 export default function RecordLoanRepaymentScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
   const { loanId } = useLocalSearchParams<{ loanId: string }>();
@@ -46,10 +46,6 @@ export default function RecordLoanRepaymentScreen() {
   const [saving, setSaving] = useState(false);
 
   const amountNum = parseFloat(amount) || 0;
-
-  const onAmountChange = (val: string) => {
-    setAmount(val.replace(/[^0-9.]/g, ''));
-  };
 
   const handleSave = async () => {
     if (!amount || amountNum <= 0) {
@@ -83,171 +79,96 @@ export default function RecordLoanRepaymentScreen() {
 
   if (!loan) {
     return (
-      <View style={[styles.root, { backgroundColor: colors.background, alignItems: 'center', justifyContent: 'center' }]}>
-        <Text style={{ color: colors.mutedForeground }}>Loan not found.</Text>
+      <View style={[styles.root, styles.centered]}>
+        <Text style={type.caption}>Loan not found.</Text>
       </View>
     );
   }
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <View style={[
-        styles.header,
-        { paddingTop: isWeb ? 67 : insets.top + 10, backgroundColor: colors.background, borderBottomColor: colors.border },
-      ]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
-          <Feather name="x" size={22} color={colors.foreground} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>Record Repayment</Text>
-        <TouchableOpacity
-          style={[styles.saveBtn, { backgroundColor: saving ? colors.muted : colors.primary }]}
-          onPress={handleSave}
-          disabled={saving}
-        >
-          <Text style={[styles.saveBtnText, { color: colors.primaryForeground }]}>Save</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.root}>
+      <ScreenHeader
+        title="Record Repayment"
+        paddingTop={isWeb ? 67 : insets.top + 10}
+        onClose={() => router.back()}
+        right={<SaveButton onPress={handleSave} disabled={saving} />}
+      />
 
       <KeyboardAwareScrollViewCompat
         style={{ flex: 1 }}
-        contentContainerStyle={[styles.formContent, { paddingBottom: isWeb ? 34 + 24 : insets.bottom + 24 }]}
+        contentContainerStyle={{
+          paddingHorizontal: layout.gutter,
+          paddingTop: layout.sectionGap,
+          paddingBottom: (isWeb ? 34 : insets.bottom) + layout.sectionGap,
+        }}
         keyboardShouldPersistTaps="handled"
       >
-        <View style={[styles.summaryBox, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.summaryBorrower, { color: colors.foreground }]}>{loan.borrowerName}</Text>
-          <Text style={[styles.summaryOutstanding, { color: colors.mutedForeground }]}>
+        <View style={styles.summaryBox}>
+          <Text style={type.bodyBold}>{loan.borrowerName}</Text>
+          <Text style={[type.caption, styles.summaryOutstanding]}>
             Outstanding: {formatCurrency(outstanding)}
           </Text>
         </View>
 
-        <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Amount</Text>
-          <View style={[styles.amountRow, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Text style={[styles.currencyPrefix, { color: colors.mutedForeground }]}>GH₵</Text>
-            <TextInput
-              style={[styles.amountInput, { color: colors.foreground }]}
-              placeholder="0.00"
-              placeholderTextColor={colors.mutedForeground}
-              keyboardType="decimal-pad"
-              value={amount}
-              onChangeText={onAmountChange}
-              autoFocus
-            />
-          </View>
+        <Field label="Amount">
+          <AmountField value={amount} onChangeText={setAmount} autoFocus />
           {amountNum > outstanding && (
-            <Text style={[styles.validationError, { color: colors.danger }]}>
+            <Text style={[type.caption, styles.validationError]}>
               Cannot exceed the outstanding balance ({formatCurrency(outstanding)}).
             </Text>
           )}
-        </View>
+        </Field>
 
-        <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Received Into</Text>
-          <View style={styles.optionList}>
-            {accounts.map((a) => (
-              <TouchableOpacity
-                key={a.id}
-                style={[
-                  styles.optionChip,
-                  {
-                    backgroundColor: destinationAccountId === a.id ? colors.primary : colors.muted,
-                    borderColor: destinationAccountId === a.id ? colors.primary : colors.border,
-                  },
-                ]}
-                onPress={() => setDestinationAccountId(a.id)}
-              >
-                <Text style={[
-                  styles.optionText,
-                  { color: destinationAccountId === a.id ? colors.primaryForeground : colors.foreground },
-                ]}>
-                  {a.name}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={[styles.infoBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-          <Feather name="info" size={14} color={colors.mutedForeground} style={{ marginRight: 8 }} />
-          <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-            Repayments always credit{sourceAccount ? ` ${sourceAccount.name}` : ' the account this was originally given from'}, so its balance recovers regardless of where you actually received the cash. &quot;Received Into&quot; is just a record — it won&apos;t affect that account&apos;s balance. This won&apos;t show up as income.
-          </Text>
-        </View>
-
-        <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Date</Text>
-          <CalendarPicker value={date} onChange={setDate} maximumDate={new Date()} />
-        </View>
-
-        <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Note (optional)</Text>
-          <TextInput
-            style={[styles.textInput, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
-            placeholder="Add a note..."
-            placeholderTextColor={colors.mutedForeground}
-            value={note}
-            onChangeText={setNote}
+        <Field label="Received Into">
+          <ChipGroup
+            options={accounts.map((a) => ({ id: a.id, name: a.name }))}
+            value={destinationAccountId}
+            onSelect={setDestinationAccountId}
           />
-        </View>
+        </Field>
+
+        <InfoBanner>
+          Repayments always credit
+          {sourceAccount ? ` ${sourceAccount.name}` : ' the account this was originally given from'}, so
+          its balance recovers regardless of where you actually received the cash. &quot;Received
+          Into&quot; is just a record — it won&apos;t affect that account&apos;s balance. This won&apos;t
+          show up as income.
+        </InfoBanner>
+
+        <Field label="Date">
+          <CalendarPicker value={date} onChange={setDate} maximumDate={new Date()} />
+        </Field>
+
+        <Field label="Note (optional)">
+          <TextField placeholder="Add a note..." value={note} onChangeText={setNote} />
+        </Field>
       </KeyboardAwareScrollViewCompat>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: {
-    flexDirection: 'row',
+  root: {
+    flex: 1,
+    backgroundColor: palette.canvas,
+  },
+  centered: {
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
+    justifyContent: 'center',
   },
-  closeBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { flex: 1, fontSize: 17, fontFamily: 'Inter_600SemiBold' },
-  saveBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20 },
-  saveBtnText: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
-  formContent: { paddingHorizontal: 16, paddingTop: 24 },
-  summaryBox: { borderRadius: 14, borderWidth: 1, padding: 16, marginBottom: 20 },
-  summaryBorrower: { fontSize: 16, fontFamily: 'Inter_600SemiBold', marginBottom: 4 },
-  summaryOutstanding: { fontSize: 13, fontFamily: 'Inter_400Regular' },
-  fieldGroup: { marginBottom: 20 },
-  fieldLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  amountRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  summaryBox: {
+    backgroundColor: palette.surface,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 56,
+    borderColor: palette.hairline,
+    borderRadius: layout.radiusContainer,
+    padding: layout.gapLg,
+    marginBottom: layout.sectionGap,
   },
-  currencyPrefix: { fontSize: 18, fontFamily: 'Inter_500Medium', marginRight: 8 },
-  amountInput: { flex: 1, minWidth: 0, fontSize: 28, fontFamily: 'Inter_600SemiBold' },
-  validationError: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 6 },
-  optionList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  optionChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, borderWidth: 1 },
-  optionText: { fontSize: 13, fontFamily: 'Inter_500Medium' },
-  infoBox: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginBottom: 20,
+  summaryOutstanding: {
+    marginTop: 4,
   },
-  infoText: { flex: 1, fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18 },
-  textInput: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 48,
-    fontSize: 15,
-    fontFamily: 'Inter_400Regular',
+  validationError: {
+    color: palette.alert,
+    marginTop: layout.gapSm,
   },
 });

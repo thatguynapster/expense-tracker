@@ -1,23 +1,24 @@
-import React, { useState, useEffect } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TouchableOpacity,
-  TextInput,
-  Platform,
-  Alert,
-} from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useColors } from '@/hooks/useColors';
+
+import {
+  DestructiveButton,
+  Field,
+  InfoBanner,
+  PressFeedback,
+  SaveButton,
+  ScreenHeader,
+  TextField,
+} from '@/components/ui';
+import { layout, palette, type } from '@/theme/theme';
 import { useStore } from '@/store/useStore';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
 
 export default function AddAccountScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
   const { id } = useLocalSearchParams<{ id?: string }>();
@@ -34,13 +35,13 @@ export default function AddAccountScreen() {
   const existing = accounts.find((a) => a.id === id);
 
   const [name, setName] = useState('');
-  const [type, setType] = useState<'spendable' | 'protected'>('spendable');
+  const [type_, setType_] = useState<'spendable' | 'protected'>('spendable');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (existing) {
       setName(existing.name);
-      setType(existing.type);
+      setType_(existing.type);
     }
   }, [existing?.id]);
 
@@ -54,7 +55,7 @@ export default function AddAccountScreen() {
       if (isEditing && id) {
         await updateAccount(id, name.trim());
       } else {
-        await addAccount(name.trim(), type);
+        await addAccount(name.trim(), type_);
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
@@ -98,190 +99,111 @@ export default function AddAccountScreen() {
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      {/* Header */}
-      <View style={[
-        styles.header,
-        {
-          paddingTop: isWeb ? 67 : insets.top + 10,
-          backgroundColor: colors.background,
-          borderBottomColor: colors.border,
-        },
-      ]}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.closeBtn}>
-          <Feather name="x" size={22} color={colors.foreground} />
-        </TouchableOpacity>
-        <Text style={[styles.headerTitle, { color: colors.foreground }]}>
-          {isEditing ? 'Edit Account' : 'Add Account'}
-        </Text>
-        <TouchableOpacity
-          style={[styles.saveBtn, { backgroundColor: saving ? colors.muted : colors.primary }]}
-          onPress={handleSave}
-          disabled={saving}
-        >
-          <Text style={[styles.saveBtnText, { color: colors.primaryForeground }]}>Save</Text>
-        </TouchableOpacity>
-      </View>
+    <View style={styles.root}>
+      <ScreenHeader
+        title={isEditing ? 'Edit Account' : 'Add Account'}
+        paddingTop={isWeb ? 67 : insets.top + 10}
+        onClose={() => router.back()}
+        right={<SaveButton onPress={handleSave} disabled={saving} />}
+      />
 
       <KeyboardAwareScrollViewCompat
         style={{ flex: 1 }}
-        contentContainerStyle={[
-          styles.formContent,
-          { paddingBottom: isWeb ? 34 + 24 : insets.bottom + 24 },
-        ]}
+        contentContainerStyle={{
+          paddingHorizontal: layout.gutter,
+          paddingTop: layout.sectionGap,
+          paddingBottom: (isWeb ? 34 : insets.bottom) + layout.sectionGap,
+        }}
         keyboardShouldPersistTaps="handled"
       >
-        {/* Name */}
-        <View style={styles.fieldGroup}>
-          <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Account Name</Text>
-          <TextInput
-            style={[styles.input, { backgroundColor: colors.card, borderColor: colors.border, color: colors.foreground }]}
+        <Field label="Account Name">
+          <TextField
             placeholder="e.g. Salary Account, Mobile Money"
-            placeholderTextColor={colors.mutedForeground}
             value={name}
             onChangeText={setName}
             autoFocus
             returnKeyType="done"
           />
-        </View>
+        </Field>
 
-        {/* Type */}
         {!isEditing && (
-          <View style={styles.fieldGroup}>
-            <Text style={[styles.fieldLabel, { color: colors.mutedForeground }]}>Account Type</Text>
+          <Field label="Account Type">
             <View style={styles.typeOptions}>
-              <TouchableOpacity
-                style={[
-                  styles.typeCard,
-                  {
-                    backgroundColor: type === 'spendable' ? colors.card : colors.background,
-                    borderColor: type === 'spendable' ? colors.primary : colors.border,
-                    borderWidth: type === 'spendable' ? 2 : 1,
-                  },
-                ]}
-                onPress={() => setType('spendable')}
-              >
-                <View style={[styles.typeIcon, { backgroundColor: type === 'spendable' ? colors.muted : colors.muted }]}>
-                  <Feather name="briefcase" size={20} color={type === 'spendable' ? colors.primary : colors.mutedForeground} />
-                </View>
-                <Text style={[styles.typeName, { color: type === 'spendable' ? colors.primary : colors.foreground }]}>
-                  Spendable
-                </Text>
-                <Text style={[styles.typeDesc, { color: colors.mutedForeground }]}>
-                  Salary, cash, mobile money. Counts toward Safe-to-Spend.
-                </Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={[
-                  styles.typeCard,
-                  {
-                    backgroundColor: type === 'protected' ? colors.card : colors.background,
-                    borderColor: type === 'protected' ? colors.warning : colors.border,
-                    borderWidth: type === 'protected' ? 2 : 1,
-                  },
-                ]}
-                onPress={() => setType('protected')}
-              >
-                <View style={[styles.typeIcon, { backgroundColor: colors.muted }]}>
-                  <Feather name="shield" size={20} color={type === 'protected' ? colors.warning : colors.mutedForeground} />
-                </View>
-                <Text style={[styles.typeName, { color: type === 'protected' ? colors.warning : colors.foreground }]}>
-                  Protected
-                </Text>
-                <Text style={[styles.typeDesc, { color: colors.mutedForeground }]}>
-                  Savings, emergency fund. Excluded from Safe-to-Spend.
-                </Text>
-              </TouchableOpacity>
+              <TypeCard
+                selected={type_ === 'spendable'}
+                onPress={() => setType_('spendable')}
+                icon="briefcase"
+                accent={palette.link}
+                name="Spendable"
+                description="Salary, cash, mobile money. Counts toward Safe-to-Spend."
+              />
+              <TypeCard
+                selected={type_ === 'protected'}
+                onPress={() => setType_('protected')}
+                icon="shield"
+                accent={palette.caution}
+                name="Protected"
+                description="Savings, emergency fund. Excluded from Safe-to-Spend."
+              />
             </View>
-          </View>
+          </Field>
         )}
 
         {isEditing && (
-          <View style={[styles.infoBox, { backgroundColor: colors.muted, borderColor: colors.border }]}>
-            <Feather name="info" size={14} color={colors.mutedForeground} style={{ marginRight: 8 }} />
-            <Text style={[styles.infoText, { color: colors.mutedForeground }]}>
-              Account type cannot be changed after creation. Only the name can be edited.
-            </Text>
-          </View>
+          <InfoBanner>Account type cannot be changed after creation. Only the name can be edited.</InfoBanner>
         )}
 
-        {isEditing && (
-          <TouchableOpacity
-            style={[styles.deleteBtn, { backgroundColor: colors.dangerBg, borderColor: colors.danger + '40' }]}
-            onPress={handleDelete}
-          >
-            <Feather name="trash-2" size={15} color={colors.danger} style={{ marginRight: 8 }} />
-            <Text style={[styles.deleteBtnText, { color: colors.danger }]}>Delete Account</Text>
-          </TouchableOpacity>
-        )}
+        {isEditing && <DestructiveButton label="Delete Account" onPress={handleDelete} />}
       </KeyboardAwareScrollViewCompat>
     </View>
   );
 }
 
+function TypeCard({
+  selected,
+  onPress,
+  icon,
+  accent,
+  name,
+  description,
+}: {
+  selected: boolean;
+  onPress: () => void;
+  icon: React.ComponentProps<typeof Feather>['name'];
+  accent: string;
+  name: string;
+  description: string;
+}) {
+  return (
+    <PressFeedback
+      baseColor={palette.surface}
+      onPress={onPress}
+      style={[styles.typeCard, selected && { borderColor: accent }]}
+    >
+      <Feather name={icon} size={20} color={selected ? accent : palette.textSecondary} />
+      <Text style={[type.bodyBold, selected && { color: accent }]}>{name}</Text>
+      <Text style={[type.caption, styles.typeDesc]}>{description}</Text>
+    </PressFeedback>
+  );
+}
+
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
+  root: {
+    flex: 1,
+    backgroundColor: palette.canvas,
   },
-  closeBtn: { padding: 4, marginRight: 8 },
-  headerTitle: { flex: 1, fontSize: 17, fontFamily: 'Inter_600SemiBold' },
-  saveBtn: { paddingHorizontal: 18, paddingVertical: 8, borderRadius: 20 },
-  saveBtnText: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
-  formContent: { paddingHorizontal: 16, paddingTop: 24 },
-  fieldGroup: { marginBottom: 24 },
-  fieldLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-    marginBottom: 10,
+  typeOptions: {
+    gap: layout.gapMd,
   },
-  input: {
-    borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    height: 50,
-    fontSize: 16,
-    fontFamily: 'Inter_400Regular',
-  },
-  typeOptions: { gap: 12 },
   typeCard: {
-    padding: 16,
-    borderRadius: 14,
-    gap: 8,
-  },
-  typeIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 4,
-  },
-  typeName: { fontSize: 16, fontFamily: 'Inter_600SemiBold' },
-  typeDesc: { fontSize: 12, fontFamily: 'Inter_400Regular', lineHeight: 17 },
-  infoBox: {
-    flexDirection: 'row',
+    padding: layout.gapLg,
+    borderRadius: layout.radiusContainer,
+    borderWidth: 1,
+    borderColor: palette.hairline,
+    gap: layout.gapSm,
     alignItems: 'flex-start',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
   },
-  infoText: { flex: 1, fontSize: 13, fontFamily: 'Inter_400Regular', lineHeight: 18 },
-  deleteBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    marginTop: 16,
+  typeDesc: {
+    lineHeight: 17,
   },
-  deleteBtnText: { fontSize: 14, fontFamily: 'Inter_600SemiBold' },
 });

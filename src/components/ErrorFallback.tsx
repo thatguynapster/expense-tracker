@@ -12,7 +12,8 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-import { useColors } from "@/hooks/useColors";
+import { layout, palette, type } from "@/theme/theme";
+import { PressFeedback } from "@/components/ui";
 
 export type ErrorFallbackProps = {
   error: Error;
@@ -20,7 +21,6 @@ export type ErrorFallbackProps = {
 };
 
 export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
 
   const [isModalVisible, setIsModalVisible] = useState(false);
@@ -49,7 +49,7 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
   });
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.background }]}>
+    <View style={styles.container}>
       {__DEV__ ? (
         <Pressable
           onPress={() => setIsModalVisible(true)}
@@ -57,46 +57,21 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           accessibilityRole="button"
           style={({ pressed }) => [
             styles.topButton,
-            {
-              top: insets.top + 16,
-              backgroundColor: colors.card,
-              opacity: pressed ? 0.8 : 1,
-            },
+            { top: insets.top + 16, opacity: pressed ? 0.8 : 1 },
           ]}
         >
-          <Feather name="alert-circle" size={20} color={colors.foreground} />
+          <Feather name="alert-circle" size={20} color={palette.textPrimary} />
         </Pressable>
       ) : null}
 
       <View style={styles.content}>
-        <Text style={[styles.title, { color: colors.foreground }]}>
-          Something went wrong
-        </Text>
+        <Text style={styles.title}>Something went wrong</Text>
 
-        <Text style={[styles.message, { color: colors.mutedForeground }]}>
-          Please reload the app to continue.
-        </Text>
+        <Text style={[type.body, styles.message]}>Please reload the app to continue.</Text>
 
-        <Pressable
-          onPress={handleRestart}
-          style={({ pressed }) => [
-            styles.button,
-            {
-              backgroundColor: colors.primary,
-              opacity: pressed ? 0.9 : 1,
-              transform: [{ scale: pressed ? 0.98 : 1 }],
-            },
-          ]}
-        >
-          <Text
-            style={[
-              styles.buttonText,
-              { color: colors.primaryForeground },
-            ]}
-          >
-            Try Again
-          </Text>
-        </Pressable>
+        <PressFeedback baseColor={palette.link} pressedColor={palette.link} onPress={handleRestart} style={styles.button}>
+          <Text style={styles.buttonText}>Try Again</Text>
+        </PressFeedback>
       </View>
 
       {__DEV__ ? (
@@ -107,58 +82,26 @@ export function ErrorFallback({ error, resetError }: ErrorFallbackProps) {
           onRequestClose={() => setIsModalVisible(false)}
         >
           <View style={styles.modalOverlay}>
-            <View
-              style={[
-                styles.modalContainer,
-                { backgroundColor: colors.background },
-              ]}
-            >
-              <View
-                style={[
-                  styles.modalHeader,
-                  { borderBottomColor: colors.border },
-                ]}
-              >
-                <Text style={[styles.modalTitle, { color: colors.foreground }]}>
-                  Error Details
-                </Text>
+            <View style={styles.modalContainer}>
+              <View style={styles.modalHeader}>
+                <Text style={type.header}>Error Details</Text>
                 <Pressable
                   onPress={() => setIsModalVisible(false)}
                   accessibilityLabel="Close error details"
                   accessibilityRole="button"
-                  style={({ pressed }) => [
-                    styles.closeButton,
-                    { opacity: pressed ? 0.6 : 1 },
-                  ]}
+                  style={({ pressed }) => [styles.closeButton, { opacity: pressed ? 0.6 : 1 }]}
                 >
-                  <Feather name="x" size={24} color={colors.foreground} />
+                  <Feather name="x" size={24} color={palette.textPrimary} />
                 </Pressable>
               </View>
 
               <ScrollView
                 style={styles.modalScrollView}
-                contentContainerStyle={[
-                  styles.modalScrollContent,
-                  { paddingBottom: insets.bottom + 16 },
-                ]}
+                contentContainerStyle={[styles.modalScrollContent, { paddingBottom: insets.bottom + 16 }]}
                 showsVerticalScrollIndicator
               >
-                <View
-                  style={[
-                    styles.errorContainer,
-                    { backgroundColor: colors.card },
-                  ]}
-                >
-                  <Text
-                    style={[
-                      styles.errorText,
-                      {
-                        color: colors.foreground,
-                        fontFamily: monoFont,
-                      },
-                    ]}
-                    selectable
-                  >
+                <View style={styles.errorContainer}>
+                  <Text style={[styles.errorText, { fontFamily: monoFont }]} selectable>
                     {formatErrorDetails()}
                   </Text>
                 </View>
@@ -179,65 +122,61 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     padding: 24,
+    backgroundColor: palette.canvas,
   },
   content: {
     alignItems: "center",
     justifyContent: "center",
-    gap: 16,
+    gap: layout.gapLg,
     width: "100%",
     maxWidth: 600,
   },
   title: {
-    fontSize: 28,
-    fontWeight: "700",
+    fontSize: type.title.fontSize,
+    fontFamily: type.title.fontFamily,
+    color: palette.textPrimary,
     textAlign: "center",
-    lineHeight: 40,
+    lineHeight: 32,
   },
   message: {
-    fontSize: 16,
     textAlign: "center",
-    lineHeight: 24,
+    lineHeight: 22,
   },
   topButton: {
     position: "absolute",
     right: 16,
-    width: 44,
-    height: 44,
+    width: layout.touchTarget,
+    height: layout.touchTarget,
     borderRadius: 8,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     zIndex: 10,
+    backgroundColor: palette.surface,
   },
   button: {
     paddingVertical: 16,
-    borderRadius: 8,
+    borderRadius: layout.radiusContainer,
     paddingHorizontal: 24,
     minWidth: 200,
-    shadowColor: "#000",
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
   },
   buttonText: {
-    fontWeight: "600",
+    fontSize: type.bodyBold.fontSize,
+    fontFamily: type.bodyBold.fontFamily,
+    color: palette.canvas,
     textAlign: "center",
-    fontSize: 16,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    backgroundColor: "rgba(0, 0, 0, 0.6)",
     justifyContent: "flex-end",
   },
   modalContainer: {
     width: "100%",
     height: "90%",
-    borderTopLeftRadius: 16,
-    borderTopRightRadius: 16,
+    borderTopLeftRadius: layout.radiusHero,
+    borderTopRightRadius: layout.radiusHero,
+    backgroundColor: palette.canvas,
   },
   modalHeader: {
     flexDirection: "row",
@@ -247,14 +186,11 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-  },
-  modalTitle: {
-    fontSize: 20,
-    fontWeight: "600",
+    borderBottomColor: palette.hairline,
   },
   closeButton: {
-    width: 44,
-    height: 44,
+    width: layout.touchTarget,
+    height: layout.touchTarget,
     alignItems: "center",
     justifyContent: "center",
   },
@@ -266,12 +202,14 @@ const styles = StyleSheet.create({
   },
   errorContainer: {
     width: "100%",
-    borderRadius: 8,
+    borderRadius: layout.radiusContainer,
     overflow: "hidden",
     padding: 16,
+    backgroundColor: palette.surface,
   },
   errorText: {
-    fontSize: 12,
+    fontSize: type.caption.fontSize,
+    color: palette.textPrimary,
     lineHeight: 18,
     width: "100%",
   },

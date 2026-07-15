@@ -69,6 +69,11 @@ export const type = {
   hero: { fontSize: 36, fontFamily: font.medium },
   heroUnit: { fontSize: 18, fontFamily: font.regular },
   badge: { fontSize: 11, fontFamily: font.medium },
+  // Pushed/modal screen title (transaction-detail, add-transaction, budget, …) —
+  // distinct from the larger tab-root `title`.
+  header: { fontSize: 17, fontFamily: font.medium, color: palette.textPrimary },
+  // Large digit entry (amount fields) — bigger than body, smaller than hero.
+  inputAmount: { fontSize: 28, fontFamily: font.medium, color: palette.textPrimary },
 } as const;
 
 export const layout = {

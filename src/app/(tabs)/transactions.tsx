@@ -10,7 +10,6 @@ import {
   FabSafeFlatList,
   GroupedList,
   Overline,
-  PressFeedback,
   useFabBottomOffset,
 } from '@/components/ui';
 import { TransactionItem } from '@/components/TransactionItem';
@@ -98,36 +97,6 @@ export default function TransactionsScreen() {
   };
 
   const filterCount = activeFilterCount(filters);
-
-  const FilterChipRow = ({
-    label,
-    value,
-    options,
-    onSelect,
-  }: {
-    label: string;
-    value: string | null;
-    options: { id: string; name: string }[];
-    onSelect: (id: string | null) => void;
-  }) => (
-    <View style={styles.filterRow}>
-      <Overline>{label}</Overline>
-      <View style={styles.chipList}>
-        {[{ id: null as string | null, name: 'All' }, ...options].map((opt) => {
-          const selected = value === opt.id;
-          return (
-            <Pressable
-              key={opt.id ?? 'all'}
-              style={[styles.chip, selected && styles.chipSelected]}
-              onPress={() => onSelect(opt.id)}
-            >
-              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{opt.name}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
-    </View>
-  );
 
   return (
     <View style={styles.root}>
@@ -243,6 +212,38 @@ export default function TransactionsScreen() {
         )}
       />
       <Fab onPress={handleAdd} />
+    </View>
+  );
+}
+
+function FilterChipRow({
+  label,
+  value,
+  options,
+  onSelect,
+}: {
+  label: string;
+  value: string | null;
+  options: { id: string; name: string }[];
+  onSelect: (id: string | null) => void;
+}) {
+  return (
+    <View style={styles.filterRow}>
+      <Overline>{label}</Overline>
+      <View style={styles.chipList}>
+        {[{ id: null as string | null, name: 'All' }, ...options].map((opt) => {
+          const selected = value === opt.id;
+          return (
+            <Pressable
+              key={opt.id ?? 'all'}
+              style={[styles.chip, selected && styles.chipSelected]}
+              onPress={() => onSelect(opt.id)}
+            >
+              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{opt.name}</Text>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 }

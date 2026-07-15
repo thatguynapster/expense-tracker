@@ -51,10 +51,12 @@ export function PressFeedback({
     <AnimatedPressable
       {...props}
       onPressIn={(e) => {
+        // eslint-disable-next-line react-hooks/immutability -- Reanimated SharedValue: .value assignment is the documented API, not a React state mutation.
         pressed.value = withTiming(1, { duration });
         props.onPressIn?.(e);
       }}
       onPressOut={(e) => {
+        // eslint-disable-next-line react-hooks/immutability -- Reanimated SharedValue: .value assignment is the documented API, not a React state mutation.
         pressed.value = withTiming(0, { duration });
         props.onPressOut?.(e);
       }}

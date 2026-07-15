@@ -1,13 +1,9 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  Platform,
-} from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { Feather } from '@expo/vector-icons';
-import { useColors } from '@/hooks/useColors';
+
+import { layout, palette, type } from '@/theme/theme';
+import { PressFeedback } from '@/components/ui';
 
 interface Props {
   value: Date;
@@ -30,8 +26,6 @@ function startOfDay(d: Date) {
 }
 
 export function CalendarPicker({ value, onChange, maximumDate }: Props) {
-  const colors = useColors();
-
   const [open, setOpen] = useState(false);
   const [viewYear, setViewYear] = useState(value.getFullYear());
   const [viewMonth, setViewMonth] = useState(value.getMonth());
@@ -98,56 +92,35 @@ export function CalendarPicker({ value, onChange, maximumDate }: Props) {
 
   return (
     <View>
-      {/* Trigger button */}
-      <TouchableOpacity
-        style={[styles.trigger, { backgroundColor: colors.card, borderColor: colors.border }]}
-        onPress={() => setOpen((v) => !v)}
-        activeOpacity={0.8}
-      >
-        <Feather name="calendar" size={16} color={colors.primary} />
-        <Text style={[styles.triggerText, { color: colors.foreground }]}>{triggerLabel}</Text>
-        <Feather
-          name={open ? 'chevron-up' : 'chevron-down'}
-          size={16}
-          color={colors.mutedForeground}
-        />
-      </TouchableOpacity>
+      <PressFeedback baseColor={palette.surface} onPress={() => setOpen((v) => !v)} style={styles.trigger}>
+        <Feather name="calendar" size={16} color={palette.link} />
+        <Text style={[type.body, styles.triggerText]}>{triggerLabel}</Text>
+        <Feather name={open ? 'chevron-up' : 'chevron-down'} size={16} color={palette.textMuted} />
+      </PressFeedback>
 
-      {/* Calendar dropdown */}
+      {/* §9: no shadows outside modals — this dropdown is the one permitted exception, a floating overlay. */}
       {open && (
-        <View
-          style={[
-            styles.calendar,
-            {
-              backgroundColor: colors.card,
-              borderColor: colors.border,
-              shadowColor: '#000',
-            },
-          ]}
-        >
-          {/* Header */}
+        <View style={styles.calendar}>
           <View style={styles.calHeader}>
-            <Text style={[styles.calMonthTitle, { color: colors.foreground }]}>{monthLabel}</Text>
+            <Text style={type.bodyBold}>{monthLabel}</Text>
             <View style={styles.navRow}>
-              <TouchableOpacity onPress={prevMonth} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Feather name="chevron-left" size={18} color={colors.foreground} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={nextMonth} style={styles.navBtn} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
-                <Feather name="chevron-right" size={18} color={colors.foreground} />
-              </TouchableOpacity>
+              <PressFeedback baseColor="transparent" onPress={prevMonth} style={styles.navBtn}>
+                <Feather name="chevron-left" size={18} color={palette.textPrimary} />
+              </PressFeedback>
+              <PressFeedback baseColor="transparent" onPress={nextMonth} style={styles.navBtn}>
+                <Feather name="chevron-right" size={18} color={palette.textPrimary} />
+              </PressFeedback>
             </View>
           </View>
 
-          {/* Day-of-week labels */}
           <View style={styles.weekRow}>
             {WEEK_DAYS.map((d, i) => (
-              <Text key={i} style={[styles.weekLabel, { color: colors.mutedForeground }]}>
+              <Text key={i} style={[type.caption, styles.weekLabel]}>
                 {d}
               </Text>
             ))}
           </View>
 
-          {/* Day grid — 6 rows × 7 cols */}
           <View style={styles.grid}>
             {cells.map((date, i) => {
               const isCurrentMonth = date.getMonth() === viewMonth;
@@ -156,41 +129,35 @@ export function CalendarPicker({ value, onChange, maximumDate }: Props) {
               const isDisabled = maxDate ? date > maxDate : false;
 
               return (
-                <TouchableOpacity
+                <PressFeedback
                   key={i}
-                  style={[
-                    styles.cell,
-                    isSel && { backgroundColor: colors.primary, borderRadius: 20 },
-                  ]}
+                  baseColor="transparent"
+                  pressedColor={palette.surfaceRaised}
                   onPress={() => selectDate(date)}
                   disabled={isDisabled}
-                  activeOpacity={0.7}
+                  style={[styles.cell, isSel && styles.cellSelected]}
                 >
                   <Text
                     style={[
-                      styles.cellText,
-                      { color: isCurrentMonth ? colors.foreground : colors.mutedForeground + '55' },
-                      isSel && { color: '#fff', fontFamily: 'Inter_700Bold' },
-                      isTod && !isSel && { color: colors.primary, fontFamily: 'Inter_600SemiBold' },
-                      isDisabled && { color: colors.mutedForeground + '44' },
+                      type.body,
+                      { color: isCurrentMonth ? palette.textPrimary : palette.textMuted },
+                      isSel && styles.cellTextSelected,
+                      isTod && !isSel && styles.cellTextToday,
+                      isDisabled && styles.cellTextDisabled,
                     ]}
                   >
                     {date.getDate()}
                   </Text>
-                  {/* dot for today when not selected */}
-                  {isTod && !isSel && (
-                    <View style={[styles.todayDot, { backgroundColor: colors.primary }]} />
-                  )}
-                </TouchableOpacity>
+                  {isTod && !isSel && <View style={styles.todayDot} />}
+                </PressFeedback>
               );
             })}
           </View>
 
-          {/* Footer */}
-          <View style={[styles.calFooter, { borderTopColor: colors.border }]}>
-            <TouchableOpacity onPress={selectToday}>
-              <Text style={[styles.todayBtn, { color: colors.primary }]}>Today</Text>
-            </TouchableOpacity>
+          <View style={styles.calFooter}>
+            <PressFeedback baseColor="transparent" onPress={selectToday} style={styles.todayBtnWrap}>
+              <Text style={styles.todayBtn}>Today</Text>
+            </PressFeedback>
           </View>
         </View>
       )}
@@ -202,29 +169,31 @@ const styles = StyleSheet.create({
   trigger: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 10,
+    gap: layout.gapSm,
     borderWidth: 1,
-    borderRadius: 12,
-    paddingHorizontal: 14,
+    borderColor: palette.hairline,
+    borderRadius: layout.radiusContainer,
+    paddingHorizontal: layout.gapMd,
     height: 48,
   },
   triggerText: {
     flex: 1,
-    fontSize: 15,
-    fontFamily: 'Inter_400Regular',
   },
   calendar: {
-    marginTop: 6,
+    marginTop: layout.gapSm,
+    backgroundColor: palette.surfaceRaised,
     borderWidth: 1,
-    borderRadius: 16,
-    padding: 14,
+    borderColor: palette.hairline,
+    borderRadius: layout.radiusHero,
+    padding: layout.gapMd,
     ...Platform.select({
       web: {
-        boxShadow: '0 4px 24px rgba(0,0,0,0.12)',
+        boxShadow: '0 4px 24px rgba(0,0,0,0.36)',
       },
       default: {
+        shadowColor: palette.canvas,
         shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.12,
+        shadowOpacity: 0.36,
         shadowRadius: 16,
         elevation: 8,
       },
@@ -234,11 +203,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  calMonthTitle: {
-    fontSize: 15,
-    fontFamily: 'Inter_600SemiBold',
+    marginBottom: layout.gapMd,
   },
   navRow: {
     flexDirection: 'row',
@@ -254,8 +219,6 @@ const styles = StyleSheet.create({
   weekLabel: {
     flex: 1,
     textAlign: 'center',
-    fontSize: 12,
-    fontFamily: 'Inter_500Medium',
   },
   grid: {
     flexDirection: 'row',
@@ -266,10 +229,22 @@ const styles = StyleSheet.create({
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
+    borderRadius: 20,
   },
-  cellText: {
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
+  cellSelected: {
+    backgroundColor: palette.link,
+  },
+  cellTextSelected: {
+    color: palette.canvas,
+    fontFamily: type.bodyBold.fontFamily,
+  },
+  cellTextToday: {
+    color: palette.link,
+    fontFamily: type.bodyBold.fontFamily,
+  },
+  cellTextDisabled: {
+    color: palette.textMuted,
+    opacity: 0.5,
   },
   todayDot: {
     position: 'absolute',
@@ -277,14 +252,20 @@ const styles = StyleSheet.create({
     width: 4,
     height: 4,
     borderRadius: 2,
+    backgroundColor: palette.link,
   },
   calFooter: {
     borderTopWidth: 1,
-    marginTop: 8,
-    paddingTop: 10,
+    borderTopColor: palette.hairline,
+    marginTop: layout.gapSm,
+    paddingTop: layout.gapMd,
+  },
+  todayBtnWrap: {
+    alignSelf: 'flex-start',
   },
   todayBtn: {
-    fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
+    fontSize: type.body.fontSize,
+    fontFamily: type.bodyBold.fontFamily,
+    color: palette.link,
   },
 });

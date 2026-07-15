@@ -63,6 +63,7 @@ export function HeroCard({ label, amount, family, meta }: Props) {
         setDisplay(amount);
         return;
       }
+      // eslint-disable-next-line react-hooks/immutability -- Reanimated SharedValue: .value assignment is the documented API, not a React state mutation.
       animated.value = 0;
       animated.value = withTiming(amount, {
         duration: motion.countUp,
