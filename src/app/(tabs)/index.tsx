@@ -1,29 +1,40 @@
-import React, { useCallback } from 'react';
-import {
-  View,
-  Text,
-  ScrollView,
-  StyleSheet,
-  TouchableOpacity,
-  Platform,
-  Animated,
-} from 'react-native';
+import React from 'react';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
-import { Feather, Ionicons } from '@expo/vector-icons';
+import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useColors } from '@/hooks/useColors';
-import { GroupedList } from '@/components/ui';
-import { useStore } from '@/store/useStore';
+
+import {
+  AmountText,
+  Fab,
+  FabSafeScrollView,
+  GroupedList,
+  HeroCard,
+  Overline,
+  Row,
+  SectionHeader,
+  useFabBottomOffset,
+  type HeroFamily,
+} from '@/components/ui';
 import { TransactionItem } from '@/components/TransactionItem';
-import { formatCurrency, formatCurrencyShort } from '@/utils/format';
+import { layout, palette, type } from '@/theme/theme';
+import { useStore } from '@/store/useStore';
+import { formatCurrency, formatDateShort } from '@/utils/format';
 import { getLoansSummary } from '@/utils/calculations';
 import { sortTransactions } from '@/utils/sorting';
+import type { SafeToSpendStatus } from '@/lib/types';
+
+const HERO_FAMILY: Record<SafeToSpendStatus, HeroFamily> = {
+  safe: 'positive',
+  warning: 'caution',
+  danger: 'alert',
+};
 
 export default function HomeScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
+  const fabOffset = useFabBottomOffset();
 
   const accounts = useStore((s) => s.accounts);
   const transactions = useStore((s) => s.transactions);
@@ -41,374 +52,195 @@ export default function HomeScreen() {
 
   const recentTransactions = sortTransactions(transactions).slice(0, 5);
 
-  const statusColor =
-    status === 'safe' ? colors.success :
-    status === 'warning' ? colors.warning :
-    colors.danger;
+  // §3.3 "say it once": Days Left and Usable Balance live here, not in cards.
+  const heroMeta = `${metrics.daysRemaining} days left  ·  ${formatCurrency(metrics.usableBalance)} usable`;
 
-  const statusBg =
-    status === 'safe' ? colors.successBg :
-    status === 'warning' ? colors.warningBg :
-    colors.dangerBg;
-
-  const statusText =
-    status === 'safe' ? 'You are financially safe for today' :
-    status === 'warning' ? 'Getting close to your limit' :
-    'You are financially off-track for this month.';
+  const recentGroups = React.useMemo(() => {
+    const groups: { date: string; transactions: typeof recentTransactions }[] = [];
+    const seen = new Map<string, typeof recentTransactions>();
+    for (const tx of recentTransactions) {
+      const day = tx.date.split('T')[0] ?? tx.date;
+      if (!seen.has(day)) {
+        seen.set(day, []);
+        groups.push({ date: day, transactions: seen.get(day)! });
+      }
+      seen.get(day)!.push(tx);
+    }
+    return groups;
+  }, [recentTransactions]);
 
   const handleAddPress = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     router.push('/add-transaction');
   };
 
-  const topPad = isWeb ? 67 : insets.top;
-  const botPad = isWeb ? 34 : 0;
-
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <ScrollView
-        style={styles.scroll}
-        contentContainerStyle={[
-          styles.content,
-          { paddingTop: topPad + 16, paddingBottom: 120 + botPad },
-        ]}
-        showsVerticalScrollIndicator={false}
+    <View style={styles.root}>
+      <FabSafeScrollView
+        contentContainerStyle={{
+          paddingHorizontal: layout.gutter,
+          paddingTop: (isWeb ? 67 : insets.top) + layout.gapLg,
+          paddingBottom: fabOffset + layout.listBottomPad,
+        }}
       >
-        {/* Header */}
+        {/* §4.1.1: title left, month pill right. */}
         <View style={styles.header}>
-          <Text style={[styles.appName, { color: colors.foreground }]}>Overview</Text>
-          <View style={[styles.monthBadge, { backgroundColor: colors.muted }]}>
-            <Text style={[styles.monthText, { color: colors.mutedForeground }]}>
+          <Text style={type.title}>Overview</Text>
+          <View style={styles.monthPill}>
+            <Text style={type.caption}>
               {new Date().toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
             </Text>
           </View>
         </View>
 
-        {/* Safe-to-Spend Hero Card */}
-        <View style={[styles.heroCard, { backgroundColor: statusBg, borderColor: statusColor + '30' }]}>
-          <Text style={[styles.heroLabel, { color: statusColor }]}>Safe to Spend Today</Text>
-          <Text style={[styles.heroAmount, { color: statusColor }]}>
-            {formatCurrency(metrics.safeToSpendToday)}
-          </Text>
-          <Text style={[styles.heroStatus, { color: statusColor + 'CC' }]}>{statusText}</Text>
-        </View>
+        <HeroCard
+          label="Safe to spend today"
+          amount={metrics.safeToSpendToday}
+          family={HERO_FAMILY[status]}
+          meta={heroMeta}
+        />
 
-        {/* Metrics Row 1: Days Left + Discipline Debt */}
-        <View style={[styles.metricsRow, { marginBottom: 10 }]}>
-          <View style={[styles.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.metricIcon, { backgroundColor: colors.muted }]}>
-              <Feather name="calendar" size={16} color={colors.primary} />
+        {/* §4.1.3: discipline debt is a quiet row at zero, a caution card when owed. */}
+        {disciplineDebt === 0 ? (
+          <GroupedList style={styles.section}>
+            <View style={styles.debtZeroRow}>
+              <Text style={type.caption}>Discipline debt</Text>
+              <AmountText amount={0} kind="transfer" />
             </View>
-            <Text style={[styles.metricValue, { color: colors.foreground }]}>
-              {metrics.daysRemaining}
+          </GroupedList>
+        ) : (
+          <View style={[styles.section, styles.debtCard]}>
+            <Text style={[type.caption, styles.debtTitle]}>Discipline debt</Text>
+            <AmountText amount={disciplineDebt} size="title" color={palette.caution} style={styles.debtAmount} />
+            <Text style={[type.caption, styles.debtDesc]}>
+              Money withdrawn from savings that has not yet been repaid through extra savings.
             </Text>
-            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Days Left</Text>
-          </View>
-
-          <View style={[styles.metricCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.metricIcon, { backgroundColor: colors.muted }]}>
-              <Feather name="alert-triangle" size={16} color={disciplineDebt > 0 ? colors.danger : colors.mutedForeground} />
-            </View>
-            <Text style={[
-              styles.metricValue,
-              { color: disciplineDebt > 0 ? colors.danger : colors.foreground }
-            ]}>
-              {formatCurrencyShort(disciplineDebt)}
-            </Text>
-            <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Discipline Debt</Text>
-          </View>
-        </View>
-
-        {/* Metrics Row 2: Usable Balance (full width) */}
-        <View style={[styles.metricsRow, { marginBottom: 16 }]}>
-          <View style={[styles.metricCardWide, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <View style={[styles.metricIcon, { backgroundColor: colors.muted }]}>
-              <Feather name="credit-card" size={16} color={colors.primary} />
-            </View>
-            <View>
-              <Text style={[styles.metricValue, { color: colors.foreground, fontSize: 18 }]}>
-                {formatCurrency(metrics.usableBalance)}
-              </Text>
-              <Text style={[styles.metricLabel, { color: colors.mutedForeground }]}>Usable Balance (spendable accounts)</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Discipline Debt Info (if any) */}
-        {disciplineDebt > 0 && (
-          <View style={[styles.debtBanner, { backgroundColor: colors.dangerBg, borderColor: colors.danger + '40' }]}>
-            <Feather name="alert-circle" size={16} color={colors.danger} style={{ marginRight: 8 }} />
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.debtTitle, { color: colors.danger }]}>Discipline Debt</Text>
-              <Text style={[styles.debtDesc, { color: colors.danger + 'BB' }]}>
-                Money withdrawn from savings that has not yet been repaid through extra savings.
-              </Text>
-            </View>
           </View>
         )}
 
-        {/* Loans Summary */}
         {loansSummary.borrowerCount > 0 && (
-          <TouchableOpacity
-            style={[
-              styles.loansSummaryCard,
-              {
-                backgroundColor: loansSummary.overdueCount > 0 ? colors.warningBg : colors.card,
-                borderColor: loansSummary.overdueCount > 0 ? colors.warning + '40' : colors.border,
-              },
-            ]}
-            onPress={() => router.push('/(tabs)/loans')}
-            activeOpacity={0.8}
-          >
-            <View style={[styles.loansSummaryIcon, { backgroundColor: colors.muted }]}>
-              <Feather
-                name="dollar-sign"
-                size={18}
-                color={loansSummary.overdueCount > 0 ? colors.warning : colors.primary}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[
-                styles.loansSummaryTitle,
-                { color: loansSummary.overdueCount > 0 ? colors.warning : colors.foreground },
-              ]}>
-                You are owed {formatCurrency(loansSummary.totalOutstanding)}
-              </Text>
-              <Text style={[styles.loansSummaryDesc, { color: colors.mutedForeground }]}>
-                Across {loansSummary.borrowerCount} {loansSummary.borrowerCount === 1 ? 'person' : 'people'}
-                {loansSummary.overdueCount > 0
-                  ? ` · ${loansSummary.overdueCount} overdue`
-                  : ''}
-              </Text>
-            </View>
-            <Feather name="chevron-right" size={18} color={colors.mutedForeground} />
-          </TouchableOpacity>
+          <GroupedList style={styles.section}>
+            <Row
+              icon="dollar-sign"
+              iconTint={loansSummary.overdueCount > 0 ? palette.alert : palette.textSecondary}
+              title={`You are owed ${formatCurrency(loansSummary.totalOutstanding)}`}
+              subtitle={`Across ${loansSummary.borrowerCount} ${loansSummary.borrowerCount === 1 ? 'person' : 'people'}${
+                loansSummary.overdueCount > 0 ? ` · ${loansSummary.overdueCount} overdue` : ''
+              }`}
+              chevron
+              onPress={() => router.push('/(tabs)/loans')}
+            />
+          </GroupedList>
         )}
 
-        {/* Recent Transactions */}
-        <View style={styles.sectionHeader}>
-          <Text style={[styles.sectionTitle, { color: colors.foreground }]}>Recent</Text>
-          {transactions.length > 5 && (
-            <TouchableOpacity onPress={() => router.push('/(tabs)/transactions')}>
-              <Text style={[styles.seeAll, { color: colors.primary }]}>See all</Text>
-            </TouchableOpacity>
-          )}
+        <View style={[styles.section, styles.recentHeader]}>
+          <SectionHeader
+            label="Recent"
+            actionLabel={transactions.length > 5 ? 'See all' : undefined}
+            onAction={() => router.push('/(tabs)/transactions')}
+          />
         </View>
 
         {recentTransactions.length === 0 ? (
-          <View style={[styles.emptyState, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="inbox" size={32} color={colors.mutedForeground} />
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No transactions yet</Text>
-            <Text style={[styles.emptyDesc, { color: colors.mutedForeground }]}>
+          <View style={styles.empty}>
+            <Feather name="inbox" size={24} color={palette.textMuted} />
+            <Text style={type.body}>No transactions yet</Text>
+            <Text style={[type.caption, styles.emptyDesc]}>
               Add your first income or expense to get started
             </Text>
           </View>
         ) : (
-          // Interim wrap until Home's own §4.1 migration: TransactionItem is now
-          // a GroupedList row and needs its container.
-          <GroupedList>
-            {recentTransactions.map((tx) => (
-              <TransactionItem
-                key={tx.id}
-                transaction={tx}
-                accounts={accounts}
-                categories={categories}
-              />
-            ))}
-          </GroupedList>
+          recentGroups.map((group) => (
+            <View key={group.date} style={styles.dateGroup}>
+              <Overline style={styles.dateLabel}>
+                {formatDateShort(group.date + 'T00:00:00.000Z')}
+              </Overline>
+              <GroupedList>
+                {group.transactions.map((tx) => (
+                  <TransactionItem
+                    key={tx.id}
+                    transaction={tx}
+                    accounts={accounts}
+                    categories={categories}
+                  />
+                ))}
+              </GroupedList>
+            </View>
+          ))
         )}
-      </ScrollView>
+      </FabSafeScrollView>
 
-      {/* FAB */}
-      <TouchableOpacity
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.primary,
-            bottom: (isWeb ? 84 : insets.bottom + 80) + 8,
-          },
-        ]}
-        onPress={handleAddPress}
-        activeOpacity={0.85}
-      >
-        <Feather name="plus" size={26} color={colors.primaryForeground} />
-      </TouchableOpacity>
+      <Fab onPress={handleAddPress} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  scroll: { flex: 1 },
-  content: { paddingHorizontal: 16 },
+  root: {
+    flex: 1,
+    backgroundColor: palette.canvas,
+  },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: layout.sectionGap,
   },
-  appName: {
-    fontSize: 26,
-    fontFamily: 'Inter_700Bold',
-  },
-  monthBadge: {
+  monthPill: {
+    backgroundColor: palette.surface,
+    borderWidth: 1,
+    borderColor: palette.hairline,
+    borderRadius: layout.radiusPill,
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 20,
   },
-  monthText: {
-    fontSize: 12,
-    fontFamily: 'Inter_500Medium',
+  section: {
+    marginTop: layout.sectionGap,
   },
-  heroCard: {
-    borderRadius: 20,
-    padding: 24,
-    marginBottom: 16,
-    borderWidth: 1,
-    alignItems: 'center',
-  },
-  heroLabel: {
-    fontSize: 13,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-  },
-  heroAmount: {
-    fontSize: 48,
-    fontFamily: 'Inter_700Bold',
-    letterSpacing: -1,
-    marginBottom: 8,
-  },
-  heroStatus: {
-    fontSize: 14,
-    fontFamily: 'Inter_400Regular',
-    textAlign: 'center',
-  },
-  metricsRow: {
-    flexDirection: 'row',
-    gap: 10,
-    marginBottom: 16,
-  },
-  metricCard: {
-    flex: 1,
-    borderRadius: 14,
-    padding: 14,
-    alignItems: 'center',
-    borderWidth: 1,
-  },
-  metricCardWide: {
-    flex: 1,
-    borderRadius: 14,
-    padding: 14,
+  debtZeroRow: {
     flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: layout.rowHeight,
+    paddingVertical: layout.rowPaddingV,
+  },
+  debtCard: {
+    backgroundColor: palette.cautionBg,
     borderWidth: 1,
-    gap: 12,
-  },
-  metricIcon: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 8,
-  },
-  metricValue: {
-    fontSize: 16,
-    fontFamily: 'Inter_700Bold',
-    marginBottom: 2,
-  },
-  metricLabel: {
-    fontSize: 10,
-    fontFamily: 'Inter_400Regular',
-    textAlign: 'center',
-  },
-  debtBanner: {
-    flexDirection: 'row',
-    alignItems: 'flex-start',
+    borderColor: palette.cautionBorder,
+    borderRadius: layout.radiusContainer,
     padding: 14,
-    borderRadius: 14,
-    borderWidth: 1,
-    marginBottom: 16,
   },
   debtTitle: {
-    fontSize: 13,
-    fontFamily: 'Inter_600SemiBold',
-    marginBottom: 2,
+    color: palette.caution,
+  },
+  debtAmount: {
+    textAlign: 'left',
+    marginTop: 4,
   },
   debtDesc: {
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-    lineHeight: 17,
+    color: palette.caution,
+    marginTop: 6,
   },
-  loansSummaryCard: {
-    flexDirection: 'row',
+  recentHeader: {
+    marginBottom: layout.gapMd,
+  },
+  dateGroup: {
+    marginBottom: layout.gapLg,
+  },
+  dateLabel: {
+    marginBottom: layout.gapSm,
+  },
+  empty: {
     alignItems: 'center',
-    padding: 14,
-    borderRadius: 14,
+    backgroundColor: palette.surface,
     borderWidth: 1,
-    marginBottom: 16,
-    gap: 12,
-  },
-  loansSummaryIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  loansSummaryTitle: {
-    fontSize: 14,
-    fontFamily: 'Inter_600SemiBold',
-    marginBottom: 2,
-  },
-  loansSummaryDesc: {
-    fontSize: 12,
-    fontFamily: 'Inter_400Regular',
-  },
-  sectionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'Inter_700Bold',
-  },
-  seeAll: {
-    fontSize: 14,
-    fontFamily: 'Inter_500Medium',
-  },
-  emptyState: {
-    alignItems: 'center',
-    padding: 32,
-    borderRadius: 16,
-    borderWidth: 1,
-    gap: 8,
-  },
-  emptyTitle: {
-    fontSize: 16,
-    fontFamily: 'Inter_600SemiBold',
+    borderColor: palette.hairline,
+    borderRadius: layout.radiusContainer,
+    padding: layout.sectionGap * 2,
+    gap: layout.gapSm,
   },
   emptyDesc: {
-    fontSize: 13,
-    fontFamily: 'Inter_400Regular',
     textAlign: 'center',
-  },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 8,
   },
 });
