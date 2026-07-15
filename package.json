@@ -57,6 +57,7 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
+    "check:theme": "tsx scripts/check-theme.ts",
     "test": "vitest run",
     "build:apk:dev": "cross-env-shell NODE_ENV=development \"expo prebuild --platform android --no-install && cd android && gradlew.bat assembleDebug\"",
     "build:apk:prod": "cross-env-shell NODE_ENV=production \"expo prebuild --platform android --no-install && cd android && gradlew.bat assembleRelease\""
