@@ -32,6 +32,10 @@ npm run build:apk:prod   # release build, output: android/app/build/outputs/apk/
 
 Both run `expo prebuild --platform android --no-install && cd android && gradlew.bat assembleDebug|assembleRelease` (see `package.json`). Unlike the earlier version of this doc, these plain npm scripts **do not** set `ANDROID_HOME`/`JAVA_HOME` for you — make sure those are already set in your shell (§1) or as permanent user environment variables before running either command.
 
+**Which one should I install on my phone?** They behave very differently, not just in size:
+- **`build:apk:dev` (debug) does not embed the JS bundle.** The React Native Gradle plugin treats the `debug` variant as "debuggable" by default (`debuggableVariants`, unoverridden in `android/app/build.gradle`), which means it's built to fetch the JS bundle live from a running Metro dev server (`expo start`) instead of packaging it into the APK. Install this and it'll require your laptop/Metro to be reachable to actually run — that's by design (it's what gives you Fast Refresh and dev tooling during active development), not a bug.
+- **`build:apk:prod` (release) embeds the JS bundle at build time** (a `bundleReleaseJsAndAssets` task runs as part of `assembleRelease`), so the resulting APK is fully standalone — install it and it runs with zero dependency on your laptop or network. **Use this one for "test it like a real app" / sideloading to a device you're walking away from.**
+
 There's also a `scripts/build-apk.sh` in the repo that sets those env vars for you before building — but it's currently **not** wired into `package.json` and still references the old `pnpm`-based workflow, so it's out of date. Don't rely on it as written; either set the env vars yourself first (§1), or ask for it to be updated to match the current npm-based scripts if you want that convenience back.
 
 ---
