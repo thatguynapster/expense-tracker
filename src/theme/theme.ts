@@ -110,7 +110,7 @@ export function useTheme() {
 
 export type CategoryKey = keyof typeof palette.category;
 
-type FeatherIconName = ComponentProps<typeof Feather>['name'];
+export type FeatherIconName = ComponentProps<typeof Feather>['name'];
 
 export const categoryIcons: Record<CategoryKey, FeatherIconName> = {
   bills: 'file-text',
