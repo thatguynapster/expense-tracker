@@ -1,10 +1,22 @@
 import React, { useMemo } from 'react';
-import { View, Text, ScrollView, StyleSheet, TouchableOpacity, Platform } from 'react-native';
+import { Platform, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useColors } from '@/hooks/useColors';
+
+import {
+  AmountText,
+  Badge,
+  Fab,
+  FabSafeScrollView,
+  GroupedList,
+  Overline,
+  PressFeedback,
+  Row,
+  useFabBottomOffset,
+} from '@/components/ui';
+import { layout, palette, type } from '@/theme/theme';
 import { useStore } from '@/store/useStore';
 import { formatCurrency, formatDateShort } from '@/utils/format';
 import { getLoanOutstanding, isLoanOverdue } from '@/utils/calculations';
@@ -16,9 +28,9 @@ function lastActivityDate(loan: Loan, payments: LoanPayment[]): string {
 }
 
 export default function LoansScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
+  const fabOffset = useFabBottomOffset();
 
   const loans = useStore((s) => s.loans);
   const loanPayments = useStore((s) => s.loanPayments);
@@ -50,200 +62,184 @@ export default function LoansScreen() {
     router.push({ pathname: '/loan-detail', params: { borrowerName } });
   };
 
+  // §4.4.2: amount + Overdue badge line, caption metadata, then a 4px
+  // repayment bar — at 0% the empty track itself communicates state.
   const LoanRow = ({ loan }: { loan: Loan }) => {
     const outstanding = getLoanOutstanding(loan, loanPayments);
-    const repaidToDate = loan.principal - outstanding;
+    const repaidFraction = loan.principal > 0
+      ? Math.min(1, Math.max(0, (loan.principal - outstanding) / loan.principal))
+      : 0;
     const overdue = isLoanOverdue(loan, loanPayments);
 
     return (
-      <View style={[styles.loanRow, { borderTopColor: colors.border }]}>
-        <View style={styles.loanRowMain}>
-          <Text style={[styles.loanPrincipal, { color: colors.foreground }]}>
-            {formatCurrency(loan.principal)} owed · {formatCurrency(repaidToDate)} repaid
-          </Text>
-          <Text style={[styles.loanMeta, { color: colors.mutedForeground }]}>
-            Last activity {formatDateShort(lastActivityDate(loan, loanPayments))}
-            {loan.expectedRepaymentDate ? ` · Due ${formatDateShort(loan.expectedRepaymentDate)}` : ''}
-          </Text>
+      <PressFeedback style={styles.loanRow} onPress={() => goToBorrower(loan.borrowerName)}>
+        <View style={styles.loanAmountLine}>
+          <AmountText amount={outstanding} style={styles.loanAmount} />
+          {overdue && <Badge label="Overdue" family="alert" icon="alert-circle" />}
         </View>
-        <View style={styles.loanRowRight}>
-          <Text style={[styles.loanOutstanding, { color: colors.foreground }]}>
-            {formatCurrency(outstanding)}
-          </Text>
-          {overdue && (
-            <View style={[styles.overdueBadge, { backgroundColor: colors.dangerBg }]}>
-              <Text style={[styles.overdueBadgeText, { color: colors.danger }]}>Overdue</Text>
-            </View>
-          )}
+        <Text style={[type.caption, styles.loanMeta]} numberOfLines={1}>
+          Last activity {formatDateShort(lastActivityDate(loan, loanPayments))}
+          {loan.expectedRepaymentDate ? ` · Due ${formatDateShort(loan.expectedRepaymentDate)}` : ''}
+        </Text>
+        <View style={styles.progressTrack}>
+          <View style={[styles.progressFill, { width: `${repaidFraction * 100}%` }]} />
         </View>
-      </View>
+      </PressFeedback>
     );
   };
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <ScrollView
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: isWeb ? 67 + 16 : insets.top + 16,
-            paddingBottom: isWeb ? 84 + 34 : insets.bottom + 100,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
+    <View style={styles.root}>
+      <FabSafeScrollView
+        contentContainerStyle={{
+          paddingHorizontal: layout.gutter,
+          paddingTop: (isWeb ? 67 : insets.top) + layout.gapLg,
+          paddingBottom: fabOffset + layout.listBottomPad,
+        }}
       >
-        <Text style={[styles.title, { color: colors.foreground }]}>IOUs</Text>
+        <Text style={[type.title, styles.title]}>IOUs</Text>
 
-        {borrowerGroups.length > 0 && (
-          <Text style={[styles.sectionLabel, { color: colors.mutedForeground }]}>ACTIVE</Text>
-        )}
+        {borrowerGroups.length > 0 && <Overline style={styles.listLabel}>Active</Overline>}
 
+        {/* §4.4.1: one GroupedList per person — avatar header row, then IOU rows. */}
         {borrowerGroups.map((group) => (
-          <TouchableOpacity
-            key={group.borrowerName}
-            style={[styles.borrowerCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-            onPress={() => goToBorrower(group.borrowerName)}
-            activeOpacity={0.8}
-          >
-            <View style={styles.borrowerHeader}>
-              <View style={[styles.borrowerIcon, { backgroundColor: colors.muted }]}>
-                <Feather name="user" size={18} color={colors.primary} />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={[styles.borrowerName, { color: colors.foreground }]}>{group.borrowerName}</Text>
-                <Text style={[styles.borrowerSub, { color: colors.mutedForeground }]}>
-                  {group.loans.length} active IOU{group.loans.length === 1 ? '' : 's'}
+          <GroupedList key={group.borrowerName} style={styles.personGroup}>
+            <PressFeedback
+              style={styles.personHeader}
+              onPress={() => goToBorrower(group.borrowerName)}
+            >
+              <View style={styles.avatar}>
+                <Text style={styles.avatarLetter}>
+                  {group.borrowerName.trim().charAt(0).toUpperCase()}
                 </Text>
               </View>
-              <Text style={[styles.borrowerTotal, { color: colors.foreground }]}>
-                {formatCurrency(group.totalOutstanding)}
+              <Text style={[type.bodyBold, styles.personName]} numberOfLines={1}>
+                {group.borrowerName}
               </Text>
-              <Feather name="chevron-right" size={18} color={colors.mutedForeground} style={{ marginLeft: 4 }} />
-            </View>
-
+              <AmountText amount={group.totalOutstanding} />
+              <Feather name="chevron-right" size={layout.iconRow} color={palette.textMuted} />
+            </PressFeedback>
             {group.loans.map((loan) => (
               <LoanRow key={loan.id} loan={loan} />
             ))}
-          </TouchableOpacity>
+          </GroupedList>
         ))}
 
         {borrowerGroups.length === 0 && (
-          <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="dollar-sign" size={36} color={colors.mutedForeground} />
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>No active IOUs</Text>
-            <Text style={[styles.emptyDesc, { color: colors.mutedForeground }]}>
-              Track money owed to you — loans, or anything you paid for someone else — and when it’s due back
+          <View style={styles.empty}>
+            <Feather name="users" size={24} color={palette.textMuted} />
+            <Text style={type.body}>No active IOUs</Text>
+            <Text style={[type.caption, styles.emptyDesc]}>
+              Track money you’ve lent or borrowed
             </Text>
           </View>
         )}
 
         {settledLoans.length > 0 && (
           <>
-            <Text style={[styles.sectionLabel, { color: colors.mutedForeground, marginTop: 24 }]}>SETTLED</Text>
-            {settledLoans.map((loan) => (
-              <View
-                key={loan.id}
-                style={[styles.settledCard, { backgroundColor: colors.card, borderColor: colors.border }]}
-              >
-                <View style={{ flex: 1 }}>
-                  <Text style={[styles.borrowerName, { color: colors.foreground }]}>{loan.borrowerName}</Text>
-                  <Text style={[styles.borrowerSub, { color: colors.mutedForeground }]}>
-                    {formatCurrency(loan.principal)} · settled {formatDateShort(loan.settledAt!)}
-                  </Text>
-                </View>
-                <Feather name="check-circle" size={18} color={colors.success} />
-              </View>
-            ))}
+            <Overline style={[styles.listLabel, styles.settledLabel]}>Settled</Overline>
+            <GroupedList>
+              {settledLoans.map((loan) => (
+                <Row
+                  key={loan.id}
+                  title={loan.borrowerName}
+                  subtitle={`${formatCurrency(loan.principal)} · settled ${formatDateShort(loan.settledAt!)}`}
+                  right={
+                    <Feather name="check-circle" size={layout.iconRow} color={palette.textMuted} />
+                  }
+                />
+              ))}
+            </GroupedList>
           </>
         )}
-      </ScrollView>
+      </FabSafeScrollView>
 
-      <TouchableOpacity
-        style={[
-          styles.fab,
-          { backgroundColor: colors.primary, bottom: (isWeb ? 84 : insets.bottom + 80) + 8 },
-        ]}
-        onPress={handleAdd}
-        activeOpacity={0.85}
-      >
-        <Feather name="plus" size={26} color={colors.primaryForeground} />
-      </TouchableOpacity>
+      <Fab onPress={handleAdd} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  content: { paddingHorizontal: 16 },
-  title: { fontSize: 26, fontFamily: 'Inter_700Bold', marginBottom: 20 },
-  sectionLabel: {
-    fontSize: 11,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 1,
-    marginBottom: 10,
+  root: {
+    flex: 1,
+    backgroundColor: palette.canvas,
   },
-  borrowerCard: {
-    borderRadius: 14,
+  title: {
+    marginBottom: layout.sectionGap,
+  },
+  listLabel: {
+    marginBottom: layout.gapSm,
+  },
+  settledLabel: {
+    marginTop: layout.sectionGap,
+  },
+  personGroup: {
+    marginBottom: layout.gapMd,
+  },
+  personHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: layout.gapMd,
+    minHeight: layout.rowHeight,
+    paddingVertical: layout.rowPaddingV,
+  },
+  // §6: person avatars are the only icon circles in the app. The hairline
+  // border keeps the surface-on-surface circle legible.
+  avatar: {
+    width: layout.avatar,
+    height: layout.avatar,
+    borderRadius: layout.radiusPill,
+    backgroundColor: palette.surface,
     borderWidth: 1,
-    padding: 16,
-    marginBottom: 12,
-  },
-  borrowerHeader: { flexDirection: 'row', alignItems: 'center' },
-  borrowerIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    borderColor: palette.hairline,
     alignItems: 'center',
     justifyContent: 'center',
-    marginRight: 12,
   },
-  borrowerName: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
-  borrowerSub: { fontSize: 12, fontFamily: 'Inter_400Regular', marginTop: 2 },
-  borrowerTotal: { fontSize: 16, fontFamily: 'Inter_700Bold' },
+  avatarLetter: {
+    fontSize: type.bodyBold.fontSize,
+    fontFamily: type.bodyBold.fontFamily,
+    color: palette.textSecondary,
+  },
+  personName: {
+    flex: 1,
+  },
   loanRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingTop: 12,
-    marginTop: 12,
-    borderTopWidth: 1,
+    paddingVertical: layout.rowPaddingV,
+    gap: 4,
   },
-  loanRowMain: { flex: 1, marginRight: 12 },
-  loanPrincipal: { fontSize: 13, fontFamily: 'Inter_500Medium' },
-  loanMeta: { fontSize: 11, fontFamily: 'Inter_400Regular', marginTop: 2 },
-  loanRowRight: { alignItems: 'flex-end' },
-  loanOutstanding: { fontSize: 14, fontFamily: 'Inter_700Bold' },
-  overdueBadge: { borderRadius: 8, paddingHorizontal: 8, paddingVertical: 2, marginTop: 4 },
-  overdueBadgeText: { fontSize: 10, fontFamily: 'Inter_600SemiBold' },
-  settledCard: {
+  loanAmountLine: {
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 14,
-    borderWidth: 1,
-    padding: 16,
-    marginBottom: 10,
+    gap: layout.gapSm,
+  },
+  loanAmount: {
+    textAlign: 'left',
+  },
+  loanMeta: {
+    marginTop: 0,
+  },
+  progressTrack: {
+    height: 4,
+    borderRadius: layout.radiusPill,
+    backgroundColor: palette.divider,
+    marginTop: 4,
+    overflow: 'hidden',
+  },
+  progressFill: {
+    height: '100%',
+    borderRadius: layout.radiusPill,
+    backgroundColor: palette.positive,
   },
   empty: {
     alignItems: 'center',
-    padding: 40,
-    borderRadius: 16,
+    backgroundColor: palette.surface,
     borderWidth: 1,
-    gap: 10,
+    borderColor: palette.hairline,
+    borderRadius: layout.radiusContainer,
+    padding: layout.sectionGap * 2,
+    gap: layout.gapSm,
   },
-  emptyTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
-  emptyDesc: { fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 8,
+  emptyDesc: {
+    textAlign: 'center',
   },
 });
