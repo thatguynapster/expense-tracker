@@ -38,6 +38,9 @@ export function AmountText({
   style,
 }: Props) {
   const k = KIND[kind];
+  // expense/income signs are semantic and fixed; neutral carries the value's
+  // own sign (account balances can be overdrawn).
+  const sign = kind === 'neutral' && amount < 0 ? '−' : k.sign;
   const digitColor = color ?? k.color;
   const symbolColor = kind === 'income' && !color ? palette.positiveDim : palette.textSecondary;
 
@@ -50,7 +53,7 @@ export function AmountText({
       ]}
       numberOfLines={1}
     >
-      {k.sign}
+      {sign}
       {showCurrency && (
         <Text style={[styles.symbol, { color: symbolColor }]}>{CURRENCY_SYMBOL}</Text>
       )}
