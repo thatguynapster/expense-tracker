@@ -13,6 +13,7 @@ import { router } from 'expo-router';
 import { Feather, Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useColors } from '@/hooks/useColors';
+import { GroupedList } from '@/components/ui';
 import { useStore } from '@/store/useStore';
 import { TransactionItem } from '@/components/TransactionItem';
 import { formatCurrency, formatCurrencyShort } from '@/utils/format';
@@ -203,14 +204,18 @@ export default function HomeScreen() {
             </Text>
           </View>
         ) : (
-          recentTransactions.map((tx) => (
-            <TransactionItem
-              key={tx.id}
-              transaction={tx}
-              accounts={accounts}
-              categories={categories}
-            />
-          ))
+          // Interim wrap until Home's own §4.1 migration: TransactionItem is now
+          // a GroupedList row and needs its container.
+          <GroupedList>
+            {recentTransactions.map((tx) => (
+              <TransactionItem
+                key={tx.id}
+                transaction={tx}
+                accounts={accounts}
+                categories={categories}
+              />
+            ))}
+          </GroupedList>
         )}
       </ScrollView>
 

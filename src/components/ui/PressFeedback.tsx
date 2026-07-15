@@ -17,6 +17,8 @@ interface Props extends Omit<PressableProps, 'style'> {
   style?: StyleProp<ViewStyle>;
   /** What the background returns to when released. Rows sit on `surface`, so transparent reads as "no highlight". */
   baseColor?: string;
+  /** Pressed background; colored surfaces (e.g. the FAB) pass their own color to get scale-only feedback. */
+  pressedColor?: string;
   children?: React.ReactNode;
 }
 
@@ -26,12 +28,18 @@ interface Props extends Omit<PressableProps, 'style'> {
  * With reduce-motion on, the background still switches (a visible press state
  * is an accessibility requirement, §8) but instantly and without the scale.
  */
-export function PressFeedback({ style, baseColor = 'transparent', children, ...props }: Props) {
+export function PressFeedback({
+  style,
+  baseColor = 'transparent',
+  pressedColor = palette.surfaceRaised,
+  children,
+  ...props
+}: Props) {
   const reduceMotion = useReducedMotion();
   const pressed = useSharedValue(0);
 
   const animatedStyle = useAnimatedStyle(() => ({
-    backgroundColor: interpolateColor(pressed.value, [0, 1], [baseColor, palette.surfaceRaised]),
+    backgroundColor: interpolateColor(pressed.value, [0, 1], [baseColor, pressedColor]),
     transform: [
       { scale: interpolate(pressed.value, [0, 1], [1, reduceMotion ? 1 : motion.pressScale]) },
     ],

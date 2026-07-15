@@ -1,13 +1,22 @@
 import React, { useMemo, useState } from 'react';
-import { View, Text, FlatList, StyleSheet, Platform, TouchableOpacity } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { useColors } from '@/hooks/useColors';
-import { useStore } from '@/store/useStore';
+
+import {
+  Fab,
+  FabSafeFlatList,
+  GroupedList,
+  Overline,
+  PressFeedback,
+  useFabBottomOffset,
+} from '@/components/ui';
 import { TransactionItem } from '@/components/TransactionItem';
-import { formatDate } from '@/utils/format';
+import { layout, palette, type } from '@/theme/theme';
+import { useStore } from '@/store/useStore';
+import { formatDateShort } from '@/utils/format';
 import { formatMonthDisplay, getCurrentMonthId, shiftMonthId } from '@/utils/month';
 import { sortAccounts, sortCategoriesAlphabetically, sortTransactions } from '@/utils/sorting';
 import {
@@ -26,9 +35,9 @@ const TYPE_LABELS: Record<TransactionType, string> = {
 };
 
 export default function TransactionsScreen() {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
+  const fabOffset = useFabBottomOffset();
 
   const accounts = sortAccounts(useStore((s) => s.accounts).filter((a) => !a.deletedAt));
   const activeCategories = useStore((s) => s.categories).filter((c) => !c.deletedAt);
@@ -102,81 +111,70 @@ export default function TransactionsScreen() {
     onSelect: (id: string | null) => void;
   }) => (
     <View style={styles.filterRow}>
-      <Text style={[styles.filterLabel, { color: colors.mutedForeground }]}>{label}</Text>
+      <Overline>{label}</Overline>
       <View style={styles.chipList}>
-        <TouchableOpacity
-          style={[
-            styles.chip,
-            { backgroundColor: value === null ? colors.primary : colors.muted, borderColor: value === null ? colors.primary : colors.border },
-          ]}
-          onPress={() => onSelect(null)}
-        >
-          <Text style={[styles.chipText, { color: value === null ? colors.primaryForeground : colors.foreground }]}>All</Text>
-        </TouchableOpacity>
-        {options.map((opt) => (
-          <TouchableOpacity
-            key={opt.id}
-            style={[
-              styles.chip,
-              { backgroundColor: value === opt.id ? colors.primary : colors.muted, borderColor: value === opt.id ? colors.primary : colors.border },
-            ]}
-            onPress={() => onSelect(opt.id)}
-          >
-            <Text style={[styles.chipText, { color: value === opt.id ? colors.primaryForeground : colors.foreground }]}>{opt.name}</Text>
-          </TouchableOpacity>
-        ))}
+        {[{ id: null as string | null, name: 'All' }, ...options].map((opt) => {
+          const selected = value === opt.id;
+          return (
+            <Pressable
+              key={opt.id ?? 'all'}
+              style={[styles.chip, selected && styles.chipSelected]}
+              onPress={() => onSelect(opt.id)}
+            >
+              <Text style={[styles.chipText, selected && styles.chipTextSelected]}>{opt.name}</Text>
+            </Pressable>
+          );
+        })}
       </View>
     </View>
   );
 
   return (
-    <View style={[styles.root, { backgroundColor: colors.background }]}>
-      <FlatList
+    <View style={styles.root}>
+      <FabSafeFlatList
         data={grouped}
         keyExtractor={(item) => item.date}
-        contentContainerStyle={[
-          styles.content,
-          {
-            paddingTop: isWeb ? 67 + 16 : insets.top + 16,
-            paddingBottom: isWeb ? 84 + 34 : insets.bottom + 100,
-          },
-        ]}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingHorizontal: layout.gutter,
+          paddingTop: (isWeb ? 67 : insets.top) + layout.gapLg,
+          paddingBottom: fabOffset + layout.listBottomPad,
+        }}
         scrollEnabled={grouped.length > 0}
         ListHeaderComponent={
           <View>
+            {/* §4.2.1: month selector lives inline in the header row — no card. */}
             <View style={styles.header}>
-              <Text style={[styles.title, { color: colors.foreground }]}>Transactions</Text>
-              <TouchableOpacity
-                style={[
-                  styles.filterToggle,
-                  { backgroundColor: filterCount > 0 ? colors.primary : colors.muted },
-                ]}
-                onPress={toggleFilters}
-              >
-                <Feather name="filter" size={14} color={filterCount > 0 ? colors.primaryForeground : colors.foreground} />
-                {filterCount > 0 && (
-                  <Text style={[styles.filterToggleText, { color: colors.primaryForeground }]}>{filterCount}</Text>
-                )}
-              </TouchableOpacity>
-            </View>
-
-            <View style={[styles.monthSwitcher, { backgroundColor: colors.card, borderColor: colors.border }]}>
-              <TouchableOpacity onPress={() => goToMonth(-1)} style={styles.monthArrow}>
-                <Feather name="chevron-left" size={20} color={colors.foreground} />
-              </TouchableOpacity>
-              <TouchableOpacity onPress={toggleAllTime} style={styles.monthLabelBtn}>
-                <Text style={[styles.monthLabelText, { color: colors.foreground }]}>
-                  {filters.month ? formatMonthDisplay(filters.month) : 'All Time'}
-                </Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => goToMonth(1)} style={styles.monthArrow}>
-                <Feather name="chevron-right" size={20} color={colors.foreground} />
-              </TouchableOpacity>
+              <Text style={type.title}>Transactions</Text>
+              <View style={styles.headerControls}>
+                <Pressable style={styles.monthArrow} onPress={() => goToMonth(-1)}>
+                  <Feather name="chevron-left" size={layout.iconHeader} color={palette.link} />
+                </Pressable>
+                <Pressable onPress={toggleAllTime} hitSlop={10}>
+                  <Text style={type.bodyBold} numberOfLines={1}>
+                    {filters.month ? formatMonthDisplay(filters.month) : 'All Time'}
+                  </Text>
+                </Pressable>
+                <Pressable style={styles.monthArrow} onPress={() => goToMonth(1)}>
+                  <Feather name="chevron-right" size={layout.iconHeader} color={palette.link} />
+                </Pressable>
+                <Pressable style={styles.filterToggle} onPress={toggleFilters}>
+                  <Feather
+                    name="filter"
+                    size={layout.iconHeader}
+                    color={filterCount > 0 ? palette.link : palette.textSecondary}
+                  />
+                  {/* §4.2.2: active-filter count as a dot badge on the icon, not a pill. */}
+                  {filterCount > 0 && (
+                    <View style={styles.filterDot}>
+                      <Text style={styles.filterDotText}>{filterCount}</Text>
+                    </View>
+                  )}
+                </Pressable>
+              </View>
             </View>
 
             {filtersOpen && (
-              <View style={[styles.filterPanel, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <View style={styles.filterPanel}>
                 <FilterChipRow
                   label="Month"
                   value={filters.month}
@@ -198,25 +196,28 @@ export default function TransactionsScreen() {
                 <FilterChipRow
                   label="Type"
                   value={filters.type}
-                  options={(['expense', 'income', 'transfer'] as TransactionType[]).map((t) => ({ id: t, name: TYPE_LABELS[t] }))}
+                  options={(['expense', 'income', 'transfer'] as TransactionType[]).map((t) => ({
+                    id: t,
+                    name: TYPE_LABELS[t],
+                  }))}
                   onSelect={(type) => setFilters((f) => ({ ...f, type: type as TransactionType | null }))}
                 />
                 {hasActiveFilters(filters) && (
-                  <TouchableOpacity onPress={clearFilters} style={styles.clearFiltersBtn}>
-                    <Text style={[styles.clearFiltersText, { color: colors.danger }]}>Clear all filters</Text>
-                  </TouchableOpacity>
+                  <Pressable onPress={clearFilters} style={styles.clearFiltersBtn} hitSlop={10}>
+                    <Text style={styles.clearFiltersText}>Clear all filters</Text>
+                  </Pressable>
                 )}
               </View>
             )}
           </View>
         }
         ListEmptyComponent={
-          <View style={[styles.empty, { backgroundColor: colors.card, borderColor: colors.border }]}>
-            <Feather name="list" size={36} color={colors.mutedForeground} />
-            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+          <View style={styles.empty}>
+            <Feather name="list" size={24} color={palette.textMuted} />
+            <Text style={type.body}>
               {transactions.length === 0 ? 'No transactions yet' : 'No matching transactions'}
             </Text>
-            <Text style={[styles.emptyDesc, { color: colors.mutedForeground }]}>
+            <Text style={[type.caption, styles.emptyDesc]}>
               {transactions.length === 0
                 ? 'Tap the + button to record your first transaction'
                 : 'Try browsing a different month or adjusting your filters'}
@@ -224,113 +225,134 @@ export default function TransactionsScreen() {
           </View>
         }
         renderItem={({ item }) => (
-          <View>
-            <Text style={[styles.dateLabel, { color: colors.mutedForeground }]}>
-              {formatDate(item.date + 'T00:00:00.000Z')}
-            </Text>
-            {item.transactions.map((tx) => (
-              <TransactionItem
-                key={tx.id}
-                transaction={tx}
-                accounts={accounts}
-                categories={categories}
-              />
-            ))}
+          <View style={styles.dateGroup}>
+            <Overline style={styles.dateLabel}>
+              {formatDateShort(item.date + 'T00:00:00.000Z')}
+            </Overline>
+            <GroupedList>
+              {item.transactions.map((tx) => (
+                <TransactionItem
+                  key={tx.id}
+                  transaction={tx}
+                  accounts={accounts}
+                  categories={categories}
+                />
+              ))}
+            </GroupedList>
           </View>
         )}
       />
-      <TouchableOpacity
-        style={[
-          styles.fab,
-          {
-            backgroundColor: colors.primary,
-            bottom: (isWeb ? 84 : insets.bottom + 80) + 8,
-          },
-        ]}
-        onPress={handleAdd}
-        activeOpacity={0.85}
-      >
-        <Feather name="plus" size={26} color={colors.primaryForeground} />
-      </TouchableOpacity>
+      <Fab onPress={handleAdd} />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1 },
-  content: { paddingHorizontal: 16 },
-  header: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginBottom: 20 },
-  title: { fontSize: 26, fontFamily: 'Inter_700Bold' },
-  filterToggle: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 20,
-    gap: 6,
+  root: {
+    flex: 1,
+    backgroundColor: palette.canvas,
   },
-  filterToggleText: { fontSize: 12, fontFamily: 'Inter_700Bold' },
-  monthSwitcher: {
+  header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    borderRadius: 12,
-    borderWidth: 1,
-    paddingVertical: 4,
-    marginBottom: 20,
+    marginBottom: layout.sectionGap,
   },
-  monthArrow: { padding: 12 },
-  monthLabelBtn: { flex: 1, alignItems: 'center' },
-  monthLabelText: { fontSize: 15, fontFamily: 'Inter_600SemiBold' },
+  headerControls: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  monthArrow: {
+    width: layout.touchTarget,
+    height: layout.touchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterToggle: {
+    width: layout.touchTarget,
+    height: layout.touchTarget,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterDot: {
+    position: 'absolute',
+    top: 4,
+    right: 2,
+    width: 16,
+    height: 16,
+    borderRadius: layout.radiusPill,
+    backgroundColor: palette.link,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  filterDotText: {
+    fontSize: type.badge.fontSize,
+    fontFamily: type.badge.fontFamily,
+    color: palette.canvas,
+  },
   filterPanel: {
-    borderRadius: 14,
+    backgroundColor: palette.surface,
     borderWidth: 1,
+    borderColor: palette.hairline,
+    borderRadius: layout.radiusContainer,
     padding: 14,
-    marginBottom: 20,
-    gap: 14,
+    gap: layout.gapLg,
+    marginBottom: layout.sectionGap,
   },
-  filterRow: { gap: 8 },
-  filterLabel: {
-    fontSize: 11,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 0.5,
-    textTransform: 'uppercase',
+  filterRow: {
+    gap: layout.gapSm,
   },
-  chipList: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  chip: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 16, borderWidth: 1 },
-  chipText: { fontSize: 12, fontFamily: 'Inter_500Medium' },
-  clearFiltersBtn: { alignItems: 'center', paddingTop: 4 },
-  clearFiltersText: { fontSize: 13, fontFamily: 'Inter_600SemiBold' },
+  chipList: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: layout.gapSm,
+  },
+  chip: {
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: layout.radiusPill,
+    borderWidth: 1,
+    borderColor: palette.hairline,
+  },
+  chipSelected: {
+    backgroundColor: palette.surfaceRaised,
+    borderColor: palette.link,
+  },
+  chipText: {
+    fontSize: type.caption.fontSize,
+    fontFamily: type.caption.fontFamily,
+    color: palette.textSecondary,
+  },
+  chipTextSelected: {
+    fontFamily: type.bodyBold.fontFamily,
+    color: palette.link,
+  },
+  clearFiltersBtn: {
+    alignItems: 'center',
+    paddingTop: 4,
+  },
+  clearFiltersText: {
+    fontSize: type.section.fontSize,
+    fontFamily: type.section.fontFamily,
+    color: palette.link,
+  },
+  dateGroup: {
+    marginBottom: layout.gapLg,
+  },
   dateLabel: {
-    fontSize: 12,
-    fontFamily: 'Inter_600SemiBold',
-    letterSpacing: 0.3,
-    textTransform: 'uppercase',
-    marginBottom: 8,
-    marginTop: 4,
+    marginBottom: layout.gapSm,
   },
   empty: {
     alignItems: 'center',
-    padding: 40,
-    borderRadius: 16,
+    backgroundColor: palette.surface,
     borderWidth: 1,
-    marginTop: 20,
-    gap: 10,
+    borderColor: palette.hairline,
+    borderRadius: layout.radiusContainer,
+    padding: layout.sectionGap * 2,
+    marginTop: layout.sectionGap,
+    gap: layout.gapSm,
   },
-  emptyTitle: { fontSize: 17, fontFamily: 'Inter_600SemiBold' },
-  emptyDesc: { fontSize: 13, fontFamily: 'Inter_400Regular', textAlign: 'center' },
-  fab: {
-    position: 'absolute',
-    right: 20,
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: 'center',
-    justifyContent: 'center',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 10,
-    elevation: 8,
+  emptyDesc: {
+    textAlign: 'center',
   },
 });
