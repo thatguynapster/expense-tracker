@@ -6,6 +6,7 @@ import { Feather } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 import {
+  AmountField,
   DestructiveButton,
   Field,
   InfoBanner,
@@ -36,6 +37,7 @@ export default function AddAccountScreen() {
 
   const [name, setName] = useState('');
   const [type_, setType_] = useState<'spendable' | 'protected'>('spendable');
+  const [initialBalance, setInitialBalance] = useState('');
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
@@ -55,7 +57,7 @@ export default function AddAccountScreen() {
       if (isEditing && id) {
         await updateAccount(id, name.trim());
       } else {
-        await addAccount(name.trim(), type_);
+        await addAccount(name.trim(), type_, parseFloat(initialBalance) || 0);
       }
       await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
@@ -147,6 +149,12 @@ export default function AddAccountScreen() {
                 description="Savings, emergency fund. Excluded from Safe-to-Spend."
               />
             </View>
+          </Field>
+        )}
+
+        {!isEditing && (
+          <Field label="Starting Balance (optional)">
+            <AmountField value={initialBalance} onChangeText={setInitialBalance} />
           </Field>
         )}
 
