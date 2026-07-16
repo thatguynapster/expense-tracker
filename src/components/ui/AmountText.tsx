@@ -1,4 +1,3 @@
-import React from 'react';
 import { StyleSheet, Text, type StyleProp, type TextStyle } from 'react-native';
 
 import { font, palette, type } from '@/theme/theme';
@@ -9,8 +8,10 @@ export type AmountKind = 'expense' | 'income' | 'transfer' | 'neutral';
 interface Props {
   amount: number;
   /**
-   * §3.2 semantics: expense = −, neutral text, never red; income = +, positive;
-   * transfer = unsigned, quiet; neutral = unsigned primary (account balances, totals).
+   * expense = red; income = green; transfer = unsigned, quiet, neutral color;
+   * neutral = primary (account balances, totals), turning red if the value
+   * itself goes negative. No kind renders a +/− sign — color alone carries
+   * direction, and the currency symbol always matches the digit color family.
    */
   kind?: AmountKind;
   /** Global decision: rows keep GH₵ at caption size, de-emphasized. */
@@ -22,11 +23,11 @@ interface Props {
   style?: StyleProp<TextStyle>;
 }
 
-const KIND: Record<AmountKind, { sign: string; color: string; fontFamily: string }> = {
-  expense: { sign: '−', color: palette.textPrimary, fontFamily: font.medium },
-  income: { sign: '+', color: palette.positive, fontFamily: font.medium },
-  transfer: { sign: '', color: palette.textSecondary, fontFamily: font.regular },
-  neutral: { sign: '', color: palette.textPrimary, fontFamily: font.medium },
+const KIND: Record<AmountKind, { color: string; symbolColor: string; fontFamily: string }> = {
+  expense: { color: palette.alert, symbolColor: palette.alert, fontFamily: font.medium },
+  income: { color: palette.positive, symbolColor: palette.positiveDim, fontFamily: font.medium },
+  transfer: { color: palette.textSecondary, symbolColor: palette.textSecondary, fontFamily: font.regular },
+  neutral: { color: palette.textPrimary, symbolColor: palette.textSecondary, fontFamily: font.medium },
 };
 
 export function AmountText({
@@ -38,11 +39,13 @@ export function AmountText({
   style,
 }: Props) {
   const k = KIND[kind];
-  // expense/income signs are semantic and fixed; neutral carries the value's
-  // own sign (account balances can be overdrawn).
-  const sign = kind === 'neutral' && amount < 0 ? '−' : k.sign;
-  const digitColor = color ?? k.color;
-  const symbolColor = kind === 'income' && !color ? palette.positiveDim : palette.textSecondary;
+  // Neutral amounts (account balances, totals) turn red if they go negative —
+  // that should never happen, so it doubles as a correctness flag. An explicit
+  // `color` override always wins for both the digits and the symbol, so the
+  // two never drift out of sync.
+  const isNegativeNeutral = kind === 'neutral' && amount < 0;
+  const digitColor = color ?? (isNegativeNeutral ? palette.alert : k.color);
+  const symbolColor = color ?? (isNegativeNeutral ? palette.alert : k.symbolColor);
 
   return (
     <Text
@@ -53,7 +56,6 @@ export function AmountText({
       ]}
       numberOfLines={1}
     >
-      {sign}
       {showCurrency && (
         <Text style={[styles.symbol, { color: symbolColor }]}>{CURRENCY_SYMBOL}</Text>
       )}

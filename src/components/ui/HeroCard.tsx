@@ -82,8 +82,8 @@ export function HeroCard({ label, amount, family, meta }: Props) {
   return (
     <View style={[styles.card, { backgroundColor: c.bg, borderColor: c.border }]}>
       <Text style={[styles.label, { color: c.sub }]}>{label}</Text>
+      {/* Negative values rely on the alert family swap for meaning, not a minus sign. */}
       <View style={styles.amountRow}>
-        {display < 0 && <Text style={[styles.digits, { color: c.main }]}>−</Text>}
         <Text style={[styles.symbol, { color: c.sub }]}>{CURRENCY_SYMBOL}</Text>
         <Text style={[styles.digits, { color: c.main }]}>{formatAmount(display)}</Text>
       </View>
