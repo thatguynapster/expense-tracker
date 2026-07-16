@@ -89,8 +89,9 @@ export default function AddAccountScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            // §5: delete confirm gets a Medium impact haptic at the tap itself.
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             await deleteAccount(id);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             router.back();
           },
         },

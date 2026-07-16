@@ -51,12 +51,14 @@ export default function TransactionDetailScreen() {
           text: 'Delete',
           style: 'destructive',
           onPress: async () => {
+            // §5: delete confirm gets a Medium impact haptic at the tap itself,
+            // not a success notification after the fact.
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             const result = await deleteTransaction(id);
             if (!result.success) {
               Alert.alert('Error', result.error ?? 'Failed to delete.');
               return;
             }
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             router.back();
           },
         },

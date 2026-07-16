@@ -76,8 +76,9 @@ export default function LoanDetailScreen() {
           text: 'Mark Settled',
           style: 'destructive',
           onPress: async () => {
+            // §5: delete/destructive confirm gets a Medium impact haptic at the tap itself.
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             await markLoanSettled(loan.id);
-            await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           },
         },
       ]

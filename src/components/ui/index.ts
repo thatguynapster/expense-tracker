@@ -9,6 +9,7 @@ export { Field, TextField, AmountField } from './FormField';
 export { GroupedList, Row } from './GroupedList';
 export { HeroCard, type HeroFamily } from './HeroCard';
 export { InfoBanner } from './InfoBanner';
+export { MonthTransitionView } from './MonthTransitionView';
 export { PressFeedback } from './PressFeedback';
 export { HeaderIconButton, SaveButton, ScreenHeader } from './ScreenHeader';
 export { Overline, SectionHeader } from './SectionHeader';

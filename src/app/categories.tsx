@@ -80,7 +80,8 @@ export default function CategoriesScreen() {
   };
 
   const handleConfirmDelete = async (id: string) => {
-    await Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+    // §5: delete confirm gets a Medium impact haptic at the tap itself.
+    await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await deleteCategory(id);
     setConfirmDeleteId(null);
   };

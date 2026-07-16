@@ -231,7 +231,16 @@ export default function AddTransactionScreen() {
           `Withdraw ${formatCurrency(amountNum)} from ${fromAccount?.name ?? 'Protected'} into ${toAccount?.name ?? 'Spendable'}? This increases your Discipline Debt and cannot be undone.`,
           [
             { text: 'Cancel', style: 'cancel' },
-            { text: 'Confirm Withdrawal', style: 'destructive', onPress: () => executeSave() },
+            {
+              text: 'Confirm Withdrawal',
+              style: 'destructive',
+              // §5: destructive confirm gets a Medium impact haptic at the tap
+              // itself; executeSave() still fires its own save-success haptic.
+              onPress: async () => {
+                await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                executeSave();
+              },
+            },
           ]
         );
         return;

@@ -155,7 +155,7 @@ export default function HomeScreen() {
               <Overline style={styles.dateLabel}>
                 {formatDateShort(group.date + 'T00:00:00.000Z')}
               </Overline>
-              <GroupedList>
+              <GroupedList animateItems>
                 {group.transactions.map((tx) => (
                   <TransactionItem
                     key={tx.id}

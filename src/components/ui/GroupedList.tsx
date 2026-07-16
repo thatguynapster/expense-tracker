@@ -1,30 +1,48 @@
 import React from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import { Feather } from '@expo/vector-icons';
+import Animated, { FadeIn, FadeOut, LinearTransition, useReducedMotion } from 'react-native-reanimated';
 
-import { layout, palette, type, type FeatherIconName } from '@/theme/theme';
+import { layout, motion, palette, type, type FeatherIconName } from '@/theme/theme';
 import { PressFeedback } from './PressFeedback';
+
+interface GroupedListProps {
+  children: React.ReactNode;
+  style?: StyleProp<ViewStyle>;
+  /**
+   * Fades rows in/out on add/remove (§5: transaction added/deleted). Off by
+   * default — most groups (settings clusters, category lists) don't gain
+   * anything from an entrance fade on every mount; opt in for lists whose
+   * membership actually changes while visible.
+   */
+  animateItems?: boolean;
+}
 
 /**
  * Restyle spec §3.1: one container per group, not one card per row.
  * Children render inside a single `surface` with hairline dividers between
  * them (none after the last). Children can be `<Row>`s or any custom row.
+ * Row position always smooths via layout transition (§5, reduce-motion aware).
  */
-export function GroupedList({
-  children,
-  style,
-}: {
-  children: React.ReactNode;
-  style?: StyleProp<ViewStyle>;
-}) {
+export function GroupedList({ children, style, animateItems }: GroupedListProps) {
+  const reduceMotion = useReducedMotion();
   const items = React.Children.toArray(children);
   return (
     <View style={[styles.container, style]}>
-      {items.map((child, i) => (
-        <View key={i} style={i < items.length - 1 ? styles.dividerBelow : undefined}>
-          {child}
-        </View>
-      ))}
+      {items.map((child, i) => {
+        const key = React.isValidElement(child) && child.key != null ? child.key : i;
+        return (
+          <Animated.View
+            key={key}
+            layout={reduceMotion ? undefined : LinearTransition.duration(motion.base)}
+            entering={animateItems && !reduceMotion ? FadeIn.duration(motion.base) : undefined}
+            exiting={animateItems && !reduceMotion ? FadeOut.duration(motion.base) : undefined}
+            style={i < items.length - 1 ? styles.dividerBelow : undefined}
+          >
+            {child}
+          </Animated.View>
+        );
+      })}
     </View>
   );
 }
