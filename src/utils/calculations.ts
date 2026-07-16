@@ -35,6 +35,16 @@ export function getTransactionReversal(transaction: Transaction, accounts: Accou
     }
     const minimumSavings = transaction.amount * 0.1;
     totalExtraSavings -= Math.max(0, savingsAmount - minimumSavings);
+  } else if (transaction.type === 'adjustment') {
+    // Single-account correction, same shape as expense (fromAccountId = the
+    // adjustment removed money) / income (toAccountId = it added money).
+    // Never touches Discipline Debt — it's a correction, not real activity.
+    if (transaction.fromAccountId) {
+      accountDeltas.push({ accountId: transaction.fromAccountId, delta: transaction.amount });
+    }
+    if (transaction.toAccountId) {
+      accountDeltas.push({ accountId: transaction.toAccountId, delta: -transaction.amount });
+    }
   } else {
     if (transaction.fromAccountId) {
       accountDeltas.push({ accountId: transaction.fromAccountId, delta: transaction.amount });

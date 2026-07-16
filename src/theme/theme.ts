@@ -48,6 +48,7 @@ export const palette = {
     default: '#8A93A6',
     transfer: '#5A6478', // deliberately the dullest tint in the app
     income: '#4ADE95',
+    adjustment: '#5A6478', // same quiet tint as transfer — an administrative correction, not real activity
   },
 } as const;
 
@@ -128,6 +129,7 @@ export const categoryIcons: Record<CategoryKey, FeatherIconName> = {
   default: 'tag',
   transfer: 'repeat',
   income: 'arrow-down-circle',
+  adjustment: 'sliders',
 };
 
 // Categories are user-editable free-text records, so tint/icon resolve by

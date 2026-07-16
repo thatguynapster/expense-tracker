@@ -82,7 +82,9 @@ export default function AddTransactionScreen() {
   const [countsAsDebt, setCountsAsDebt] = useState(false);
 
   useEffect(() => {
-    if (!existing) return;
+    // Adjustments have their own screen (add-adjustment.tsx) and aren't
+    // editable at all — this form only ever loads expense/income/transfer.
+    if (!existing || existing.type === 'adjustment') return;
     setTxType(existing.type);
     setAmount(String(existing.amount));
     setNote(existing.note ?? '');

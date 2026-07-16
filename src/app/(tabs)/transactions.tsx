@@ -40,6 +40,7 @@ const TYPE_LABELS: Record<TransactionType, string> = {
   expense: "Expense",
   income: "Income",
   transfer: "Transfer",
+  adjustment: "Adjustment",
 };
 
 export default function TransactionsScreen() {
@@ -225,7 +226,7 @@ export default function TransactionsScreen() {
                     label="Type"
                     value={filters.type}
                     options={(
-                      ["expense", "income", "transfer"] as TransactionType[]
+                      ["expense", "income", "transfer", "adjustment"] as TransactionType[]
                     ).map((t) => ({
                       id: t,
                       name: TYPE_LABELS[t],

@@ -1,5 +1,5 @@
 export type AccountType = 'spendable' | 'protected';
-export type TransactionType = 'income' | 'expense' | 'transfer';
+export type TransactionType = 'income' | 'expense' | 'transfer' | 'adjustment';
 export type CategoryType = 'income' | 'expense';
 export type SafeToSpendStatus = 'safe' | 'warning' | 'danger';
 

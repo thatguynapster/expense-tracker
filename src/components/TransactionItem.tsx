@@ -1,9 +1,14 @@
-import React from 'react';
-import { router } from 'expo-router';
+import React from "react";
+import { router } from "expo-router";
 
-import { AmountText, Row } from '@/components/ui';
-import { categoryIcons, categoryVisual, palette, type FeatherIconName } from '@/theme/theme';
-import type { Account, Category, Transaction } from '@/lib/types';
+import { AmountText, Row, type AmountKind } from "@/components/ui";
+import {
+  categoryIcons,
+  categoryVisual,
+  palette,
+  type FeatherIconName,
+} from "@/theme/theme";
+import type { Account, Category, Transaction } from "@/lib/types";
 
 interface Props {
   transaction: Transaction;
@@ -21,27 +26,42 @@ export function TransactionItem({ transaction, accounts, categories }: Props) {
   const toAccount = accounts.find((a) => a.id === transaction.toAccountId);
   const category = categories.find((c) => c.id === transaction.categoryId);
 
-  const isTransfer = transaction.type === 'transfer';
+  const isTransfer = transaction.type === "transfer";
 
   let title: string;
   let account: string;
   let visual: { tint: string; icon: FeatherIconName };
+  let amountKind: AmountKind;
 
-  if (transaction.type === 'income') {
-    title = 'Income';
-    account = toAccount?.name ?? '';
-    visual = categoryVisual(category ?? { name: '', type: 'income' });
-  } else if (transaction.type === 'expense') {
-    title = category?.name ?? 'Expense';
-    account = fromAccount?.name ?? '';
+  if (transaction.type === "income") {
+    title = "Income";
+    account = toAccount?.name ?? "";
+    visual = categoryVisual(category ?? { name: "", type: "income" });
+    amountKind = "income";
+  } else if (transaction.type === "expense") {
+    title = category?.name ?? "Expense";
+    account = fromAccount?.name ?? "";
     visual = categoryVisual(category);
+    amountKind = "expense";
+  } else if (transaction.type === "adjustment") {
+    title = "Balance Adjustment";
+    account = (fromAccount ?? toAccount)?.name ?? "";
+    visual = {
+      tint: palette.category.adjustment,
+      icon: categoryIcons.adjustment,
+    };
+    // Direction still reads clearly (green up, red down) — an adjustment
+    // changes what your balance actually is, unlike a transfer between your
+    // own accounts, which nets to zero.
+    amountKind = transaction.toAccountId ? "income" : "expense";
   } else {
-    title = 'Transfer';
-    account = `${fromAccount?.name ?? '?'} → ${toAccount?.name ?? '?'}`;
+    title = "Transfer";
+    account = `${fromAccount?.name ?? "?"} → ${toAccount?.name ?? "?"}`;
     visual = { tint: palette.category.transfer, icon: categoryIcons.transfer };
+    amountKind = "transfer";
   }
 
-  const subtitle = [account, transaction.note].filter(Boolean).join(' · ');
+  const subtitle = [account, transaction.note].filter(Boolean).join(" · ");
 
   return (
     <Row
@@ -50,14 +70,12 @@ export function TransactionItem({ transaction, accounts, categories }: Props) {
       title={title}
       subtitle={subtitle}
       dimmed={isTransfer}
-      right={
-        <AmountText
-          amount={transaction.amount}
-          kind={isTransfer ? 'transfer' : transaction.type}
-        />
-      }
+      right={<AmountText amount={transaction.amount} kind={amountKind} />}
       onPress={() =>
-        router.push({ pathname: '/transaction-detail', params: { id: transaction.id } })
+        router.push({
+          pathname: "/transaction-detail",
+          params: { id: transaction.id },
+        })
       }
     />
   );

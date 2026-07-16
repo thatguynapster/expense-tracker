@@ -64,6 +64,13 @@ function RootLayoutNav() {
         }}
       />
       <Stack.Screen
+        name="add-adjustment"
+        options={{
+          presentation: "modal",
+          headerShown: false,
+        }}
+      />
+      <Stack.Screen
         name="add-loan"
         options={{
           presentation: "modal",
