@@ -50,6 +50,11 @@ export function CalendarPicker({ value, onChange, maximumDate }: Props) {
     cells.push(new Date(viewYear, viewMonth + 1, cells.length - firstWeekday - daysInMonth + 1));
   }
 
+  const weeks: Date[][] = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push(cells.slice(i, i + 7));
+  }
+
   const monthLabel = new Date(viewYear, viewMonth, 1).toLocaleDateString('en-US', {
     month: 'long',
     year: 'numeric',
@@ -122,36 +127,39 @@ export function CalendarPicker({ value, onChange, maximumDate }: Props) {
           </View>
 
           <View style={styles.grid}>
-            {cells.map((date, i) => {
-              const isCurrentMonth = date.getMonth() === viewMonth;
-              const isSel = sameDay(date, selected);
-              const isTod = sameDay(date, today);
-              const isDisabled = maxDate ? date > maxDate : false;
+            {weeks.map((week, w) => (
+              <View key={w} style={styles.weekRow}>
+                {week.map((date, i) => {
+                  const isCurrentMonth = date.getMonth() === viewMonth;
+                  const isSel = sameDay(date, selected);
+                  const isTod = sameDay(date, today);
+                  const isDisabled = maxDate ? date > maxDate : false;
 
-              return (
-                <PressFeedback
-                  key={i}
-                  baseColor="transparent"
-                  pressedColor={palette.surfaceRaised}
-                  onPress={() => selectDate(date)}
-                  disabled={isDisabled}
-                  style={[styles.cell, isSel && styles.cellSelected]}
-                >
-                  <Text
-                    style={[
-                      type.body,
-                      { color: isCurrentMonth ? palette.textPrimary : palette.textMuted },
-                      isSel && styles.cellTextSelected,
-                      isTod && !isSel && styles.cellTextToday,
-                      isDisabled && styles.cellTextDisabled,
-                    ]}
-                  >
-                    {date.getDate()}
-                  </Text>
-                  {isTod && !isSel && <View style={styles.todayDot} />}
-                </PressFeedback>
-              );
-            })}
+                  return (
+                    <PressFeedback
+                      key={i}
+                      baseColor={isSel ? palette.link : 'transparent'}
+                      pressedColor={palette.surfaceRaised}
+                      onPress={() => selectDate(date)}
+                      disabled={isDisabled}
+                      style={styles.cell}
+                    >
+                      <Text
+                        style={[
+                          type.body,
+                          { color: isCurrentMonth ? palette.textPrimary : palette.textMuted },
+                          isSel && styles.cellTextSelected,
+                          isTod && !isSel && styles.cellTextToday,
+                          isDisabled && styles.cellTextDisabled,
+                        ]}
+                      >
+                        {date.getDate()}
+                      </Text>
+                    </PressFeedback>
+                  );
+                })}
+              </View>
+            ))}
           </View>
 
           <View style={styles.calFooter}>
@@ -221,21 +229,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   grid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
   },
   cell: {
-    width: `${100 / 7}%` as any,
+    flex: 1,
     aspectRatio: 1,
     alignItems: 'center',
     justifyContent: 'center',
     borderRadius: 20,
   },
-  cellSelected: {
-    backgroundColor: palette.link,
-  },
   cellTextSelected: {
-    color: palette.canvas,
+    color: palette.textPrimary,
     fontFamily: type.bodyBold.fontFamily,
   },
   cellTextToday: {
@@ -245,14 +249,6 @@ const styles = StyleSheet.create({
   cellTextDisabled: {
     color: palette.textMuted,
     opacity: 0.5,
-  },
-  todayDot: {
-    position: 'absolute',
-    bottom: 3,
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    backgroundColor: palette.link,
   },
   calFooter: {
     borderTopWidth: 1,
