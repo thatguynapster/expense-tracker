@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Account, Budget, Category, Loan, LoanPayment, Transaction } from '@/lib/types';
-import { calculateSafeToSpendToday, getBudgetPlannedAmount, getLoanOutstanding, getLoansSummary, getMonthSummary, getSafeToSpendStatus, getTransactionReversal, isLoanOverdue } from './calculations';
+import { calculateSafeToSpendToday, getBudgetPlannedAmount, getLoanOutstanding, getLoansSummary, getMonthSummary, getSafeToSpendStatus, getTransactionReversal, isLoanDueToday, isLoanOverdue } from './calculations';
 
 const account = (overrides: Partial<Account> = {}): Account => ({
   id: 'acc_1',
@@ -263,13 +263,43 @@ describe('isLoanOverdue', () => {
     const settled = loan({ expectedRepaymentDate: '2026-01-01T00:00:00.000Z', settledAt: '2026-02-01T00:00:00.000Z' });
     expect(isLoanOverdue(settled, [], now)).toBe(false);
   });
+
+  it('is not overdue when the expected date is today, even later in the day', () => {
+    const laterToday = new Date('2026-06-15T20:00:00.000Z');
+    expect(isLoanOverdue(loan({ expectedRepaymentDate: '2026-06-15T00:00:00.000Z' }), [], laterToday)).toBe(false);
+  });
+});
+
+describe('isLoanDueToday', () => {
+  const now = new Date('2026-06-15T14:30:00.000Z');
+
+  it('is true when the expected date is today, regardless of the time of day', () => {
+    expect(isLoanDueToday(loan({ expectedRepaymentDate: '2026-06-15T00:00:00.000Z' }), [], now)).toBe(true);
+  });
+
+  it('is false once the expected date has passed', () => {
+    expect(isLoanDueToday(loan({ expectedRepaymentDate: '2026-06-14T00:00:00.000Z' }), [], now)).toBe(false);
+  });
+
+  it('is false when the expected date is in the future', () => {
+    expect(isLoanDueToday(loan({ expectedRepaymentDate: '2026-06-16T00:00:00.000Z' }), [], now)).toBe(false);
+  });
+
+  it('is false when there is no expectedRepaymentDate', () => {
+    expect(isLoanDueToday(loan({ expectedRepaymentDate: null }), [], now)).toBe(false);
+  });
+
+  it('is false once the loan is fully repaid, even if due today', () => {
+    const dueToday = loan({ expectedRepaymentDate: '2026-06-15T00:00:00.000Z' });
+    expect(isLoanDueToday(dueToday, [payment({ amount: 500 })], now)).toBe(false);
+  });
 });
 
 describe('getLoansSummary', () => {
   const now = new Date('2026-06-15T00:00:00.000Z');
 
   it('returns zeroes when there are no loans', () => {
-    expect(getLoansSummary([], [], now)).toEqual({ totalOutstanding: 0, borrowerCount: 0, overdueCount: 0 });
+    expect(getLoansSummary([], [], now)).toEqual({ totalOutstanding: 0, borrowerCount: 0, overdueCount: 0, dueTodayCount: 0 });
   });
 
   it('sums outstanding balances across active loans', () => {
@@ -316,6 +346,17 @@ describe('getLoansSummary', () => {
       loan({ id: 'l2', borrowerName: 'Ama', principal: 300, expectedRepaymentDate: '2026-12-01T00:00:00.000Z' }),
     ];
     const summary = getLoansSummary(loans, [], now);
+    expect(summary.overdueCount).toBe(1);
+  });
+
+  it('counts loans due today separately from overdue loans', () => {
+    const laterToday = new Date('2026-06-15T20:00:00.000Z');
+    const loans = [
+      loan({ id: 'l1', borrowerName: 'Kwame', principal: 500, expectedRepaymentDate: '2026-06-15T00:00:00.000Z' }),
+      loan({ id: 'l2', borrowerName: 'Ama', principal: 300, expectedRepaymentDate: '2026-01-01T00:00:00.000Z' }),
+    ];
+    const summary = getLoansSummary(loans, [], laterToday);
+    expect(summary.dueTodayCount).toBe(1);
     expect(summary.overdueCount).toBe(1);
   });
 });

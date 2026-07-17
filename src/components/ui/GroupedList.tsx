@@ -52,7 +52,7 @@ interface RowProps {
   icon?: FeatherIconName;
   iconTint?: string;
   title: string;
-  subtitle?: string;
+  subtitle?: React.ReactNode;
   /** Right slot: typically an <AmountText>, a <Badge>, or nothing. */
   right?: React.ReactNode;
   chevron?: boolean;

@@ -106,17 +106,30 @@ export function getLoanOutstanding(loan: Loan, payments: LoanPayment[]): number 
   return loan.principal - totalPaid;
 }
 
+function startOfDay(d: Date): Date {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+
+/** A loan due later today isn't overdue yet — only a calendar day that has fully passed counts. */
 export function isLoanOverdue(loan: Loan, payments: LoanPayment[], currentDate: Date = new Date()): boolean {
   if (loan.settledAt) return false;
   if (!loan.expectedRepaymentDate) return false;
   if (getLoanOutstanding(loan, payments) <= 0) return false;
-  return new Date(loan.expectedRepaymentDate) < currentDate;
+  return startOfDay(new Date(loan.expectedRepaymentDate)) < startOfDay(currentDate);
+}
+
+export function isLoanDueToday(loan: Loan, payments: LoanPayment[], currentDate: Date = new Date()): boolean {
+  if (loan.settledAt) return false;
+  if (!loan.expectedRepaymentDate) return false;
+  if (getLoanOutstanding(loan, payments) <= 0) return false;
+  return startOfDay(new Date(loan.expectedRepaymentDate)).getTime() === startOfDay(currentDate).getTime();
 }
 
 export interface LoansSummary {
   totalOutstanding: number;
   borrowerCount: number;
   overdueCount: number;
+  dueTodayCount: number;
 }
 
 /**
@@ -135,8 +148,9 @@ export function getLoansSummary(loans: Loan[], payments: LoanPayment[], currentD
   );
   const borrowerCount = new Set(activeWithBalance.map((loan) => loan.borrowerName)).size;
   const overdueCount = activeWithBalance.filter((loan) => isLoanOverdue(loan, payments, currentDate)).length;
+  const dueTodayCount = activeWithBalance.filter((loan) => isLoanDueToday(loan, payments, currentDate)).length;
 
-  return { totalOutstanding, borrowerCount, overdueCount };
+  return { totalOutstanding, borrowerCount, overdueCount, dueTodayCount };
 }
 
 /**

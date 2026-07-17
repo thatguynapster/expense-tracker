@@ -20,7 +20,7 @@ import { layout, palette, type } from '@/theme/theme';
 import { CalendarPicker } from '@/components/CalendarPicker';
 import { useStore } from '@/store/useStore';
 import { formatCurrency, formatDate } from '@/utils/format';
-import { getLoanOutstanding, isLoanOverdue } from '@/utils/calculations';
+import { getLoanOutstanding, isLoanDueToday, isLoanOverdue } from '@/utils/calculations';
 import type { Loan } from '@/lib/types';
 
 type TimelineEntry =
@@ -98,6 +98,7 @@ export default function LoanDetailScreen() {
   const LoanCard = ({ loan }: { loan: Loan }) => {
     const outstanding = getLoanOutstanding(loan, loanPayments);
     const overdue = isLoanOverdue(loan, loanPayments);
+    const dueToday = isLoanDueToday(loan, loanPayments);
     const isEditingDate = editingDateFor === loan.id;
 
     return (
@@ -108,6 +109,8 @@ export default function LoanDetailScreen() {
             <Text style={[type.caption, styles.settledLabel]}>Settled</Text>
           ) : overdue ? (
             <Badge label="Overdue" family="alert" icon="alert-circle" />
+          ) : dueToday ? (
+            <Badge label="Due Today" family="caution" icon="clock" />
           ) : null}
         </View>
 

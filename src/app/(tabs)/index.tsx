@@ -122,11 +122,25 @@ export default function HomeScreen() {
           <GroupedList style={styles.section}>
             <Row
               icon="dollar-sign"
-              iconTint={loansSummary.overdueCount > 0 ? palette.alert : palette.textSecondary}
+              iconTint={
+                loansSummary.overdueCount > 0
+                  ? palette.alert
+                  : loansSummary.dueTodayCount > 0
+                    ? palette.caution
+                    : palette.textSecondary
+              }
               title={`You are owed ${formatCurrency(loansSummary.totalOutstanding)}`}
-              subtitle={`Across ${loansSummary.borrowerCount} ${loansSummary.borrowerCount === 1 ? 'person' : 'people'}${
-                loansSummary.overdueCount > 0 ? ` · ${loansSummary.overdueCount} overdue` : ''
-              }`}
+              subtitle={
+                <>
+                  {`Across ${loansSummary.borrowerCount} ${loansSummary.borrowerCount === 1 ? 'person' : 'people'}`}
+                  {loansSummary.overdueCount > 0 && (
+                    <Text style={{ color: palette.alert }}>{` · ${loansSummary.overdueCount} overdue`}</Text>
+                  )}
+                  {loansSummary.dueTodayCount > 0 && (
+                    <Text style={{ color: palette.caution }}>{` · ${loansSummary.dueTodayCount} due today`}</Text>
+                  )}
+                </>
+              }
               chevron
               onPress={() => router.push('/(tabs)/loans')}
             />

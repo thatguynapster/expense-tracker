@@ -19,7 +19,7 @@ import {
 import { layout, palette, type } from '@/theme/theme';
 import { useStore } from '@/store/useStore';
 import { formatCurrency, formatDateShort } from '@/utils/format';
-import { getLoanOutstanding, isLoanOverdue } from '@/utils/calculations';
+import { getLoanOutstanding, isLoanDueToday, isLoanOverdue } from '@/utils/calculations';
 import type { Loan, LoanPayment } from '@/lib/types';
 
 function lastActivityDate(loan: Loan, payments: LoanPayment[]): string {
@@ -62,20 +62,25 @@ export default function LoansScreen() {
     router.push({ pathname: '/loan-detail', params: { borrowerName } });
   };
 
-  // §4.4.2: amount + Overdue badge line, caption metadata, then a 4px
-  // repayment bar — at 0% the empty track itself communicates state.
+  // §4.4.2: amount + Overdue/Due Today badge line, caption metadata, then a
+  // 4px repayment bar — at 0% the empty track itself communicates state.
   const LoanRow = ({ loan }: { loan: Loan }) => {
     const outstanding = getLoanOutstanding(loan, loanPayments);
     const repaidFraction = loan.principal > 0
       ? Math.min(1, Math.max(0, (loan.principal - outstanding) / loan.principal))
       : 0;
     const overdue = isLoanOverdue(loan, loanPayments);
+    const dueToday = isLoanDueToday(loan, loanPayments);
 
     return (
       <PressFeedback style={styles.loanRow} onPress={() => goToBorrower(loan.borrowerName)}>
         <View style={styles.loanAmountLine}>
           <AmountText amount={outstanding} style={styles.loanAmount} />
-          {overdue && <Badge label="Overdue" family="alert" icon="alert-circle" />}
+          {overdue ? (
+            <Badge label="Overdue" family="alert" icon="alert-circle" />
+          ) : dueToday ? (
+            <Badge label="Due Today" family="caution" icon="clock" />
+          ) : null}
         </View>
         <Text style={[type.caption, styles.loanMeta]} numberOfLines={1}>
           Last activity {formatDateShort(lastActivityDate(loan, loanPayments))}

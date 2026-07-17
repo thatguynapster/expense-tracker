@@ -5,9 +5,9 @@ import { Feather } from '@expo/vector-icons';
 import { layout, palette, type, type FeatherIconName } from '@/theme/theme';
 
 /**
- * §3.3: badges mark exceptions, not defaults — only Protected (caution) and
- * Overdue (alert) exist. There is deliberately no positive/neutral family:
- * the majority state is never badged.
+ * §3.3: badges mark exceptions, not defaults — e.g. Protected/Due Today
+ * (caution) and Overdue (alert). There is deliberately no positive/neutral
+ * family: the majority state is never badged.
  */
 type BadgeFamily = 'caution' | 'alert';
 
