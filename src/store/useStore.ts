@@ -168,6 +168,8 @@ interface AppStore {
     expectedRepaymentDate: string | null,
   ) => Promise<void>;
   markLoanSettled: (id: string) => Promise<void>;
+  /** Reverses the disbursement and every repayment against sourceAccountId, then tombstones the loan and its payments. */
+  deleteLoan: (id: string) => Promise<{ success: boolean; error?: string }>;
   getLoanOutstanding: (loanId: string) => number;
 
   getSafeToSpendMetrics: () => SafeToSpendMetrics;
@@ -757,7 +759,7 @@ export const useStore = create<AppStore>((set, get) => ({
     if (amount <= 0)
       return { success: false, error: "Amount must be positive." };
 
-    const loan = get().loans.find((l) => l.id === loanId);
+    const loan = get().loans.find((l) => l.id === loanId && !l.deletedAt);
     if (!loan) return { success: false, error: "Loan not found." };
 
     const destinationAccount = get().accounts.find(
@@ -834,8 +836,45 @@ export const useStore = create<AppStore>((set, get) => ({
     void get().syncNow();
   },
 
+  deleteLoan: async (id) => {
+    const loan = get().loans.find((l) => l.id === id && !l.deletedAt);
+    if (!loan) return { success: false, error: "Loan not found." };
+
+    const activePayments = get().loanPayments.filter(
+      (p) => p.loanId === id && !p.deletedAt,
+    );
+    const totalRepaid = activePayments.reduce((sum, p) => sum + p.amount, 0);
+
+    // Undoes the original disbursement debit and every repayment credit
+    // against sourceAccountId, leaving its balance exactly as if the loan
+    // had never existed — same reversal approach as deleteTransaction.
+    const netDelta = loan.principal - totalRepaid;
+    const accounts = get().accounts.map((a) =>
+      a.id === loan.sourceAccountId
+        ? { ...a, balance: a.balance + netDelta, updatedAt: now(), syncedAt: null }
+        : a,
+    );
+
+    const loans = get().loans.map((l) =>
+      l.id === id
+        ? { ...l, deletedAt: now(), updatedAt: now(), syncedAt: null }
+        : l,
+    );
+    const loanPayments = get().loanPayments.map((p) =>
+      p.loanId === id && !p.deletedAt
+        ? { ...p, deletedAt: now(), updatedAt: now(), syncedAt: null }
+        : p,
+    );
+
+    set({ accounts, loans, loanPayments });
+    await persist({ ...get(), accounts, loans, loanPayments });
+    void get().syncNow();
+
+    return { success: true };
+  },
+
   getLoanOutstanding: (loanId) => {
-    const loan = get().loans.find((l) => l.id === loanId);
+    const loan = get().loans.find((l) => l.id === loanId && !l.deletedAt);
     if (!loan) return 0;
     return getLoanOutstanding(loan, get().loanPayments);
   },

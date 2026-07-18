@@ -36,7 +36,7 @@ export default function RecordLoanRepaymentScreen() {
   const loans = useStore((s) => s.loans);
   const recordLoanRepayment = useStore((s) => s.recordLoanRepayment);
   const outstanding = useStore((s) => s.getLoanOutstanding)(loanId);
-  const loan = loans.find((l) => l.id === loanId);
+  const loan = loans.find((l) => l.id === loanId && !l.deletedAt);
   const sourceAccount = accounts.find((a) => a.id === loan?.sourceAccountId);
 
   const [amount, setAmount] = useState('');

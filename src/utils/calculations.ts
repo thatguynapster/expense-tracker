@@ -101,7 +101,7 @@ export function getSafeToSpendStatus(
 
 export function getLoanOutstanding(loan: Loan, payments: LoanPayment[]): number {
   const totalPaid = payments
-    .filter((p) => p.loanId === loan.id)
+    .filter((p) => p.loanId === loan.id && !p.deletedAt)
     .reduce((sum, p) => sum + p.amount, 0);
   return loan.principal - totalPaid;
 }
@@ -112,6 +112,7 @@ function startOfDay(d: Date): Date {
 
 /** A loan due later today isn't overdue yet — only a calendar day that has fully passed counts. */
 export function isLoanOverdue(loan: Loan, payments: LoanPayment[], currentDate: Date = new Date()): boolean {
+  if (loan.deletedAt) return false;
   if (loan.settledAt) return false;
   if (!loan.expectedRepaymentDate) return false;
   if (getLoanOutstanding(loan, payments) <= 0) return false;
@@ -119,6 +120,7 @@ export function isLoanOverdue(loan: Loan, payments: LoanPayment[], currentDate: 
 }
 
 export function isLoanDueToday(loan: Loan, payments: LoanPayment[], currentDate: Date = new Date()): boolean {
+  if (loan.deletedAt) return false;
   if (loan.settledAt) return false;
   if (!loan.expectedRepaymentDate) return false;
   if (getLoanOutstanding(loan, payments) <= 0) return false;
@@ -139,7 +141,7 @@ export interface LoansSummary {
  */
 export function getLoansSummary(loans: Loan[], payments: LoanPayment[], currentDate: Date = new Date()): LoansSummary {
   const activeWithBalance = loans.filter(
-    (loan) => !loan.settledAt && getLoanOutstanding(loan, payments) > 0
+    (loan) => !loan.deletedAt && !loan.settledAt && getLoanOutstanding(loan, payments) > 0
   );
 
   const totalOutstanding = activeWithBalance.reduce(

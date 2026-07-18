@@ -35,8 +35,8 @@ export default function LoansScreen() {
   const loans = useStore((s) => s.loans);
   const loanPayments = useStore((s) => s.loanPayments);
 
-  const activeLoans = loans.filter((l) => !l.settledAt);
-  const settledLoans = loans.filter((l) => l.settledAt);
+  const activeLoans = loans.filter((l) => !l.deletedAt && !l.settledAt);
+  const settledLoans = loans.filter((l) => !l.deletedAt && l.settledAt);
 
   const borrowerGroups = useMemo(() => {
     const names = Array.from(new Set(activeLoans.map((l) => l.borrowerName)));

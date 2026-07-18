@@ -237,6 +237,14 @@ describe('getLoanOutstanding', () => {
   it('can go to zero when fully repaid', () => {
     expect(getLoanOutstanding(loan(), [payment({ amount: 500 })])).toBe(0);
   });
+
+  it('ignores deleted (reversed) payments', () => {
+    const payments = [
+      payment({ id: 'p1', amount: 100 }),
+      payment({ id: 'p2', amount: 150, deletedAt: '2026-02-01T00:00:00.000Z' }),
+    ];
+    expect(getLoanOutstanding(loan(), payments)).toBe(400);
+  });
 });
 
 describe('isLoanOverdue', () => {
@@ -347,6 +355,16 @@ describe('getLoansSummary', () => {
     ];
     const summary = getLoansSummary(loans, [], now);
     expect(summary.overdueCount).toBe(1);
+  });
+
+  it('excludes deleted loans from the total and borrower count', () => {
+    const loans = [
+      loan({ id: 'l1', borrowerName: 'Kwame', principal: 500 }),
+      loan({ id: 'l2', borrowerName: 'Ama', principal: 300, deletedAt: '2026-06-10T00:00:00.000Z' }),
+    ];
+    const summary = getLoansSummary(loans, [], now);
+    expect(summary.totalOutstanding).toBe(500);
+    expect(summary.borrowerCount).toBe(1);
   });
 
   it('counts loans due today separately from overdue loans', () => {

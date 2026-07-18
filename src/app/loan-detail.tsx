@@ -8,6 +8,7 @@ import * as Haptics from 'expo-haptics';
 import {
   AmountText,
   Badge,
+  DestructiveButton,
   FabSafeScrollView,
   Field,
   GroupedList,
@@ -43,10 +44,11 @@ export default function LoanDetailScreen() {
   const loanPayments = useStore((s) => s.loanPayments);
   const markLoanSettled = useStore((s) => s.markLoanSettled);
   const updateLoanExpectedRepaymentDate = useStore((s) => s.updateLoanExpectedRepaymentDate);
+  const deleteLoan = useStore((s) => s.deleteLoan);
 
   const [editingDateFor, setEditingDateFor] = useState<string | null>(null);
 
-  const borrowerLoans = loans.filter((l) => l.borrowerName === borrowerName);
+  const borrowerLoans = loans.filter((l) => l.borrowerName === borrowerName && !l.deletedAt);
   const activeLoans = borrowerLoans.filter((l) => !l.settledAt);
   const settledLoans = borrowerLoans.filter((l) => l.settledAt);
   const totalOutstanding = activeLoans.reduce((sum, l) => sum + getLoanOutstanding(l, loanPayments), 0);
@@ -54,7 +56,7 @@ export default function LoanDetailScreen() {
   const timeline: TimelineEntry[] = [
     ...borrowerLoans.map((l): TimelineEntry => ({ kind: 'disbursement', date: l.dateLent, amount: l.principal, loanId: l.id })),
     ...loanPayments
-      .filter((p) => borrowerLoans.some((l) => l.id === p.loanId))
+      .filter((p) => !p.deletedAt && borrowerLoans.some((l) => l.id === p.loanId))
       .map((p): TimelineEntry => ({ kind: 'repayment', date: p.date, amount: p.amount, loanId: p.loanId })),
   ].sort((a, b) => (a.date < b.date ? -1 : 1));
 
@@ -79,6 +81,28 @@ export default function LoanDetailScreen() {
             // §5: delete/destructive confirm gets a Medium impact haptic at the tap itself.
             await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
             await markLoanSettled(loan.id);
+          },
+        },
+      ]
+    );
+  };
+
+  const handleDeleteLoan = async (loan: Loan) => {
+    Alert.alert(
+      'Delete IOU?',
+      'This reverses the amount given, and any repayments already recorded against it, on your account balances. This action cannot be undone.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: async () => {
+            // §5: delete/destructive confirm gets a Medium impact haptic at the tap itself.
+            await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            const result = await deleteLoan(loan.id);
+            if (!result.success) {
+              Alert.alert('Error', result.error ?? 'Failed to delete.');
+            }
           },
         },
       ]
@@ -173,6 +197,8 @@ export default function LoanDetailScreen() {
             </PressFeedback>
           </View>
         )}
+
+        <DestructiveButton label="Delete IOU" onPress={() => handleDeleteLoan(loan)} />
       </View>
     );
   };

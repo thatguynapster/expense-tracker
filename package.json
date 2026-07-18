@@ -53,15 +53,15 @@
     "vitest": "^4.1.10"
   },
   "scripts": {
-    "start": "expo start",
+    "start": "cross-env APP_VARIANT=development expo start",
     "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo run:android",
+    "android": "cross-env APP_VARIANT=development expo run:android",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "expo lint",
     "check:theme": "tsx scripts/check-theme.ts",
     "test": "vitest run",
-    "build:apk:dev": "cross-env-shell NODE_ENV=development \"expo prebuild --platform android --no-install && cd android && gradlew.bat assembleDebug\"",
+    "build:apk:dev": "cross-env-shell APP_VARIANT=development NODE_ENV=development \"expo prebuild --platform android --no-install && cd android && gradlew.bat assembleDebug\"",
     "build:apk:prod": "cross-env-shell NODE_ENV=production \"expo prebuild --platform android --no-install && cd android && gradlew.bat assembleRelease\""
   },
   "private": true
