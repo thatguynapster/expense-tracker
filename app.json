@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "folio-expense-tracker",
+    "name": "Folio",
     "slug": "folio-expense-tracker",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -12,13 +12,13 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#0E1116",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.anonymous.folioexpensetracker"
+      "package": "com.thatguynapster.folioexpensetracker"
     },
     "web": {
       "output": "static",
@@ -29,7 +29,7 @@
       [
         "expo-splash-screen",
         {
-          "backgroundColor": "#208AEF",
+          "backgroundColor": "#0E1116",
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 76
         }
@@ -39,7 +39,9 @@
         "expo-build-properties",
         {
           "android": {
-            "buildArchs": ["arm64-v8a"],
+            "buildArchs": [
+              "arm64-v8a"
+            ],
             "enableMinifyInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true
           }
