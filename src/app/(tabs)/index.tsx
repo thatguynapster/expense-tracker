@@ -21,7 +21,7 @@ import { TransactionItem } from '@/components/TransactionItem';
 import { layout, palette, type } from '@/theme/theme';
 import { useStore } from '@/store/useStore';
 import { formatCurrency, formatDateShort } from '@/utils/format';
-import { getLoansSummary } from '@/utils/calculations';
+import { calculateDisciplineDebt, calculateSafeToSpendToday, getLoansSummary, getSafeToSpendStatus } from '@/utils/calculations';
 import { sortTransactions } from '@/utils/sorting';
 import type { SafeToSpendStatus } from '@/lib/types';
 
@@ -41,16 +41,39 @@ export default function HomeScreen() {
   const categories = useStore((s) => s.categories);
   const loans = useStore((s) => s.loans);
   const loanPayments = useStore((s) => s.loanPayments);
-  const getSafeToSpendMetrics = useStore((s) => s.getSafeToSpendMetrics);
-  const getDisciplineDebt = useStore((s) => s.getDisciplineDebt);
-  const getSafeToSpendStatus = useStore((s) => s.getSafeToSpendStatus);
-
-  const metrics = getSafeToSpendMetrics();
-  const disciplineDebt = getDisciplineDebt();
-  const status = getSafeToSpendStatus();
-  const loansSummary = getLoansSummary(loans, loanPayments);
+  const disciplineState = useStore((s) => s.disciplineState);
 
   const recentTransactions = sortTransactions(transactions).slice(0, 5);
+
+  // Plain computation, not useMemo: React Compiler (experiments.reactCompiler
+  // in app.json) can't prove `transactions` is never mutated by the
+  // calculateSafeToSpendToday/etc. calls below and bails on preserving a
+  // manual memo here — and at ≤5 items (recentTransactions is already
+  // sliced), recomputing this grouping every render costs nothing anyway.
+  const recentGroups: { date: string; transactions: typeof recentTransactions }[] = [];
+  {
+    const seen = new Map<string, typeof recentTransactions>();
+    for (const tx of recentTransactions) {
+      const day = tx.date.split('T')[0] ?? tx.date;
+      if (!seen.has(day)) {
+        seen.set(day, []);
+        recentGroups.push({ date: day, transactions: seen.get(day)! });
+      }
+      seen.get(day)!.push(tx);
+    }
+  }
+
+  // Called directly against subscribed state (not routed through the store's
+  // getSafeToSpend*/getDisciplineDebt methods) so editing disciplineState in
+  // Settings — e.g. the Daily Budget — re-renders this screen immediately.
+  // Those store methods are stable function references; selecting one alone
+  // doesn't subscribe to the state it reads via get() internally, so this
+  // tab (which stays mounted across tab switches) would otherwise only pick
+  // up the change on its next unrelated re-render or a full app restart.
+  const metrics = calculateSafeToSpendToday(accounts, transactions, disciplineState.customDailyBudget);
+  const disciplineDebt = calculateDisciplineDebt(disciplineState);
+  const status = getSafeToSpendStatus(metrics.safeToSpendToday, disciplineState.safeToSpendWarningThreshold);
+  const loansSummary = getLoansSummary(loans, loanPayments);
 
   // §3.3 "say it once": Days Left and Usable Balance live here, not in cards.
   const heroMeta = `${metrics.daysRemaining} days left  ·  ${formatCurrency(metrics.usableBalance)} usable`;
@@ -58,20 +81,6 @@ export default function HomeScreen() {
   const heroWarningNote = metrics.budgetUnsustainable
     ? "This budget won't last the rest of the month at your current balance."
     : undefined;
-
-  const recentGroups = React.useMemo(() => {
-    const groups: { date: string; transactions: typeof recentTransactions }[] = [];
-    const seen = new Map<string, typeof recentTransactions>();
-    for (const tx of recentTransactions) {
-      const day = tx.date.split('T')[0] ?? tx.date;
-      if (!seen.has(day)) {
-        seen.set(day, []);
-        groups.push({ date: day, transactions: seen.get(day)! });
-      }
-      seen.get(day)!.push(tx);
-    }
-    return groups;
-  }, [recentTransactions]);
 
   const handleAddPress = async () => {
     await Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
