@@ -58,6 +58,7 @@ const disciplineState = (overrides: Partial<DisciplineState> = {}): DisciplineSt
   totalWithdrawnFromSavings: 0,
   totalExtraSavings: 0,
   safeToSpendWarningThreshold: 50,
+  customDailyBudget: null,
   createdAt: '2026-01-01T00:00:00.000Z',
   updatedAt: '2026-01-01T00:00:00.000Z',
   syncedAt: null,

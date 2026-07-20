@@ -32,6 +32,7 @@ export const DEFAULT_DATA: AppData = {
     totalWithdrawnFromSavings: 0,
     totalExtraSavings: 0,
     safeToSpendWarningThreshold: DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
+    customDailyBudget: null,
     createdAt: ts(),
     updatedAt: ts(),
     syncedAt: null,
@@ -69,6 +70,7 @@ function migrate(data: AppData): AppData {
   const withWarningThreshold = (state: DisciplineState): DisciplineState => ({
     ...withSyncFields(state),
     safeToSpendWarningThreshold: state.safeToSpendWarningThreshold ?? DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
+    customDailyBudget: state.customDailyBudget ?? null,
   });
 
   return {

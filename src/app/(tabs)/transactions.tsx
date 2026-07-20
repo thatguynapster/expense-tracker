@@ -55,7 +55,7 @@ export default function TransactionsScreen() {
     (c) => !c.deletedAt,
   );
   const categories = sortCategoriesAlphabetically(activeCategories);
-  const transactions = useStore((s) => s.transactions);
+  const transactions = useStore((s) => s.transactions).filter((t) => !t.deletedAt);
 
   const [filters, setFilters] = useState<TransactionFilters>({
     ...EMPTY_TRANSACTION_FILTERS,

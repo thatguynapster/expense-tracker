@@ -37,7 +37,7 @@ export default function HomeScreen() {
   const fabOffset = useFabBottomOffset();
 
   const accounts = useStore((s) => s.accounts);
-  const transactions = useStore((s) => s.transactions);
+  const transactions = useStore((s) => s.transactions).filter((t) => !t.deletedAt);
   const categories = useStore((s) => s.categories);
   const loans = useStore((s) => s.loans);
   const loanPayments = useStore((s) => s.loanPayments);
@@ -54,6 +54,10 @@ export default function HomeScreen() {
 
   // §3.3 "say it once": Days Left and Usable Balance live here, not in cards.
   const heroMeta = `${metrics.daysRemaining} days left  ·  ${formatCurrency(metrics.usableBalance)} usable`;
+  const heroBudgetMeta = `${formatCurrency(metrics.dailyBudget)} budget  ·  ${formatCurrency(metrics.spentToday)} spent today`;
+  const heroWarningNote = metrics.budgetUnsustainable
+    ? "This budget won't last the rest of the month at your current balance."
+    : undefined;
 
   const recentGroups = React.useMemo(() => {
     const groups: { date: string; transactions: typeof recentTransactions }[] = [];
@@ -98,6 +102,8 @@ export default function HomeScreen() {
           amount={metrics.safeToSpendToday}
           family={HERO_FAMILY[status]}
           meta={heroMeta}
+          secondaryMeta={heroBudgetMeta}
+          warningNote={heroWarningNote}
         />
 
         {/* §4.1.3: discipline debt is a quiet row at zero, a caution card when owed. */}

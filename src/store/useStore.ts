@@ -177,6 +177,8 @@ interface AppStore {
   getSafeToSpendStatus: () => SafeToSpendStatus;
   /** PRD §5.7: editable, defaults to GHS 50/day. */
   updateSafeToSpendWarningThreshold: (threshold: number) => Promise<void>;
+  /** Sets the user's own fixed daily spending target; null reverts to the automatic balance/days-remaining calculation. */
+  updateCustomDailyBudget: (value: number | null) => Promise<void>;
 
   /**
    * Pushes any locally dirty records (syncedAt: null) to the server. A
@@ -216,6 +218,7 @@ export const useStore = create<AppStore>((set, get) => ({
     totalWithdrawnFromSavings: 0,
     totalExtraSavings: 0,
     safeToSpendWarningThreshold: DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
+    customDailyBudget: null,
     createdAt: now(),
     updatedAt: now(),
     syncedAt: null,
@@ -431,13 +434,13 @@ export const useStore = create<AppStore>((set, get) => ({
       };
 
     const newBalance = account.balance - amount;
-    const otherSpendable = get()
-      .accounts.filter((a) => a.type === "spendable" && a.id !== accountId)
-      .reduce((sum, a) => sum + a.balance, 0);
+    // Adding this expense subtracts `amount` from safeToSpendToday 1:1 (the
+    // daily budget is fixed as of this morning, unaffected by today's own
+    // spending) — no need to simulate the post-expense state.
     const metrics = calculateSafeToSpendToday(
-      get().accounts.map((a) =>
-        a.id === accountId ? { ...a, balance: newBalance } : a,
-      ),
+      get().accounts,
+      get().transactions,
+      get().disciplineState.customDailyBudget,
     );
 
     const transaction: Transaction = {
@@ -464,7 +467,7 @@ export const useStore = create<AppStore>((set, get) => ({
     await persist({ ...get(), accounts, transactions });
     void get().syncNow();
 
-    const willGoDanger = metrics.safeToSpendToday <= 0;
+    const willGoDanger = metrics.safeToSpendToday - amount <= 0;
     return { success: true, willGoDanger };
   },
 
@@ -923,7 +926,7 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   getSafeToSpendMetrics: () => {
-    return calculateSafeToSpendToday(get().accounts);
+    return calculateSafeToSpendToday(get().accounts, get().transactions, get().disciplineState.customDailyBudget);
   },
 
   getDisciplineDebt: () => {
@@ -931,7 +934,11 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   getSafeToSpendStatus: () => {
-    const { safeToSpendToday } = calculateSafeToSpendToday(get().accounts);
+    const { safeToSpendToday } = calculateSafeToSpendToday(
+      get().accounts,
+      get().transactions,
+      get().disciplineState.customDailyBudget,
+    );
     return getSafeToSpendStatus(
       safeToSpendToday,
       get().disciplineState.safeToSpendWarningThreshold,
@@ -942,6 +949,18 @@ export const useStore = create<AppStore>((set, get) => ({
     const disciplineState: DisciplineState = {
       ...get().disciplineState,
       safeToSpendWarningThreshold: threshold,
+      updatedAt: now(),
+      syncedAt: null,
+    };
+    set({ disciplineState });
+    await persist({ ...get(), disciplineState });
+    void get().syncNow();
+  },
+
+  updateCustomDailyBudget: async (value) => {
+    const disciplineState: DisciplineState = {
+      ...get().disciplineState,
+      customDailyBudget: value,
       updatedAt: now(),
       syncedAt: null,
     };

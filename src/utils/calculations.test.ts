@@ -15,12 +15,15 @@ const account = (overrides: Partial<Account> = {}): Account => ({
 });
 
 describe('calculateSafeToSpendToday', () => {
+  // 2026-01-22: January has 31 days, so 10 days remain (inclusive of today).
+  const today = new Date('2026-01-22');
+
   it('excludes soft-deleted accounts from the usable balance', () => {
     const accounts = [
       account({ id: 'acc_1', balance: 100 }),
       account({ id: 'acc_2', balance: 400, deletedAt: '2026-01-10T00:00:00.000Z' }),
     ];
-    const { usableBalance } = calculateSafeToSpendToday(accounts, new Date('2026-01-15'));
+    const { usableBalance } = calculateSafeToSpendToday(accounts, [], null, today);
     expect(usableBalance).toBe(100);
   });
 
@@ -29,8 +32,177 @@ describe('calculateSafeToSpendToday', () => {
       account({ id: 'acc_1', balance: 100, type: 'spendable' }),
       account({ id: 'acc_2', balance: 400, type: 'protected' }),
     ];
-    const { usableBalance } = calculateSafeToSpendToday(accounts, new Date('2026-01-15'));
+    const { usableBalance } = calculateSafeToSpendToday(accounts, [], null, today);
     expect(usableBalance).toBe(100);
+  });
+
+  it("today's spending doesn't get re-averaged across the rest of the month", () => {
+    // Balance already reflects a GHS 100 expense made today.
+    const accounts = [account({ id: 'acc_main', balance: 900 })];
+    const transactions = [
+      reversalTransaction({ date: '2026-01-22T09:00:00.000Z', amount: 100, fromAccountId: 'acc_main' }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(100); // (900 + 100 reversed) / 10
+    expect(metrics.spentToday).toBe(100);
+    expect(metrics.safeToSpendToday).toBe(0);
+  });
+
+  it('goes negative once spending exceeds the daily budget', () => {
+    const accounts = [account({ id: 'acc_main', balance: 850 })];
+    const transactions = [
+      reversalTransaction({ date: '2026-01-22T09:00:00.000Z', amount: 150, fromAccountId: 'acc_main' }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(100); // (850 + 150 reversed) / 10
+    expect(metrics.spentToday).toBe(150);
+    expect(metrics.safeToSpendToday).toBe(-50);
+  });
+
+  it("income received today doesn't inflate today's budget", () => {
+    // Balance already reflects GHS 100 of income received today.
+    const accounts = [account({ id: 'acc_main', balance: 1100 })];
+    const transactions = [
+      reversalTransaction({
+        type: 'income',
+        date: '2026-01-22T09:00:00.000Z',
+        amount: 100,
+        fromAccountId: null,
+        toAccountId: 'acc_main',
+      }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(100); // (1100 - 100 reversed) / 10 — income excluded
+    expect(metrics.spentToday).toBe(0);
+    expect(metrics.safeToSpendToday).toBe(100);
+  });
+
+  it("a transfer between two spendable accounts today isn't spending", () => {
+    const accounts = [
+      account({ id: 'acc_a', balance: 800 }),
+      account({ id: 'acc_b', balance: 1200 }),
+    ];
+    const transactions = [
+      reversalTransaction({
+        type: 'transfer',
+        date: '2026-01-22T09:00:00.000Z',
+        amount: 200,
+        fromAccountId: 'acc_a',
+        toAccountId: 'acc_b',
+      }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(200); // net zero across the two spendable accounts
+    expect(metrics.spentToday).toBe(0);
+    expect(metrics.safeToSpendToday).toBe(200);
+  });
+
+  it('a transfer out to a protected account today counts as spending', () => {
+    const accounts = [
+      account({ id: 'acc_spend', balance: 700 }),
+      account({ id: 'acc_save', type: 'protected', balance: 300 }),
+    ];
+    const transactions = [
+      reversalTransaction({
+        type: 'transfer',
+        date: '2026-01-22T09:00:00.000Z',
+        amount: 300,
+        fromAccountId: 'acc_spend',
+        toAccountId: 'acc_save',
+      }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(100); // (700 + 300 reversed) / 10
+    expect(metrics.spentToday).toBe(300);
+    expect(metrics.safeToSpendToday).toBe(-200);
+  });
+
+  it("an adjustment today isn't spending, even though it moved the balance", () => {
+    const accounts = [account({ id: 'acc_main', balance: 950 })];
+    const transactions = [
+      reversalTransaction({
+        type: 'adjustment',
+        date: '2026-01-22T09:00:00.000Z',
+        amount: 50,
+        fromAccountId: 'acc_main',
+      }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(100); // (950 + 50 reversed) / 10
+    expect(metrics.spentToday).toBe(0);
+    expect(metrics.safeToSpendToday).toBe(100);
+  });
+
+  it("a transaction from a different day doesn't affect today's calculation", () => {
+    const accounts = [account({ id: 'acc_main', balance: 1000 })];
+    const transactions = [
+      reversalTransaction({ date: '2026-01-14T09:00:00.000Z', amount: 500, fromAccountId: 'acc_main' }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(100);
+    expect(metrics.spentToday).toBe(0);
+    expect(metrics.safeToSpendToday).toBe(100);
+  });
+
+  it("a deleted transaction from today is excluded", () => {
+    const accounts = [account({ id: 'acc_main', balance: 1000 })];
+    const transactions = [
+      reversalTransaction({
+        date: '2026-01-22T09:00:00.000Z',
+        amount: 100,
+        fromAccountId: 'acc_main',
+        deletedAt: '2026-01-22T10:00:00.000Z',
+      }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(100);
+    expect(metrics.spentToday).toBe(0);
+    expect(metrics.safeToSpendToday).toBe(100);
+  });
+
+  it('a custom daily budget replaces the calculated figure entirely', () => {
+    // Calculated would be 1000 / 10 = 100, but the custom budget overrides it.
+    const accounts = [account({ id: 'acc_main', balance: 1000 })];
+    const metrics = calculateSafeToSpendToday(accounts, [], 250, today);
+    expect(metrics.dailyBudget).toBe(250);
+    expect(metrics.safeToSpendToday).toBe(250);
+  });
+
+  it('a custom budget of exactly 0 is honored, not treated as unset', () => {
+    const accounts = [account({ id: 'acc_main', balance: 1000 })];
+    const metrics = calculateSafeToSpendToday(accounts, [], 0, today);
+    expect(metrics.dailyBudget).toBe(0);
+    expect(metrics.safeToSpendToday).toBe(0);
+  });
+
+  it("today's spending still comes off a custom budget the same way", () => {
+    const accounts = [account({ id: 'acc_main', balance: 900 })];
+    const transactions = [
+      reversalTransaction({ date: '2026-01-22T09:00:00.000Z', amount: 30, fromAccountId: 'acc_main' }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, 80, today);
+    expect(metrics.dailyBudget).toBe(80);
+    expect(metrics.spentToday).toBe(30);
+    expect(metrics.safeToSpendToday).toBe(50);
+  });
+
+  it('flags an unsustainable custom budget: spending it every remaining day would exceed the balance', () => {
+    // Balance can sustain 100/day for 10 days; asking for 150/day would run out early.
+    const accounts = [account({ id: 'acc_main', balance: 1000 })];
+    const metrics = calculateSafeToSpendToday(accounts, [], 150, today);
+    expect(metrics.budgetUnsustainable).toBe(true);
+  });
+
+  it('does not flag a custom budget the balance can sustain for the rest of the month', () => {
+    const accounts = [account({ id: 'acc_main', balance: 1000 })];
+    const metrics = calculateSafeToSpendToday(accounts, [], 100, today);
+    expect(metrics.budgetUnsustainable).toBe(false);
+  });
+
+  it('never flags unsustainability when no custom budget is set', () => {
+    const accounts = [account({ id: 'acc_main', balance: 10 })];
+    const metrics = calculateSafeToSpendToday(accounts, [], null, today);
+    expect(metrics.budgetUnsustainable).toBe(false);
   });
 });
 

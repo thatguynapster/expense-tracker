@@ -55,6 +55,8 @@ export interface DisciplineState {
   totalExtraSavings: number;
   /** Below this GHS/day figure, Safe-to-Spend Today shows as "warning" rather than "safe" (PRD §5.7). Lives here rather than a dedicated settings model since this is the app's only global, singleton user preference so far — not semantically a "discipline" metric, just reusing the one synced singleton record that already exists. */
   safeToSpendWarningThreshold: number;
+  /** User-set GHS/day target. When set, replaces the automatic balance/days-remaining calculation entirely for "Safe to Spend Today"; null uses the automatic calculation. */
+  customDailyBudget: number | null;
   createdAt: string;
   updatedAt: string;
   /** null = not yet synced to the server; set to the timestamp of the last successful sync. */
@@ -124,5 +126,12 @@ export interface AppData {
 export interface SafeToSpendMetrics {
   usableBalance: number;
   daysRemaining: number;
+  /** The user's customDailyBudget if set, else this morning's usable balance / daysRemaining — fixed for the whole day, unaffected by today's own spending. */
+  dailyBudget: number;
+  /** Real spending today only: expenses, and transfers out to a protected account. */
+  spentToday: number;
+  /** dailyBudget - spentToday. Can go negative once today's spending exceeds the budget. */
   safeToSpendToday: number;
+  /** True when a custom daily budget is set and, at that rate, would deplete the usable balance before month end. */
+  budgetUnsustainable: boolean;
 }

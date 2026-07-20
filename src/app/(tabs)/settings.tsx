@@ -25,9 +25,12 @@ export default function SettingsScreen() {
   const categories = allCategories.filter((c) => !c.deletedAt);
   const disciplineState = useStore((s) => s.disciplineState);
   const updateSafeToSpendWarningThreshold = useStore((s) => s.updateSafeToSpendWarningThreshold);
+  const updateCustomDailyBudget = useStore((s) => s.updateCustomDailyBudget);
 
   const [editingThreshold, setEditingThreshold] = useState(false);
   const [thresholdInput, setThresholdInput] = useState('');
+  const [editingBudget, setEditingBudget] = useState(false);
+  const [budgetInput, setBudgetInput] = useState('');
 
   const expenseCount = categories.filter((c) => c.type === 'expense').length;
   const incomeCount = categories.filter((c) => c.type === 'income').length;
@@ -46,6 +49,30 @@ export default function SettingsScreen() {
     await updateSafeToSpendWarningThreshold(value);
     await Haptics.selectionAsync();
     setEditingThreshold(false);
+  };
+
+  const startEditBudget = () => {
+    setBudgetInput(disciplineState.customDailyBudget != null ? String(disciplineState.customDailyBudget) : '');
+    setEditingBudget(true);
+  };
+
+  const saveBudget = async () => {
+    const trimmed = budgetInput.trim();
+    if (trimmed === '') {
+      // Blank clears back to the automatic balance/days-remaining calculation.
+      await updateCustomDailyBudget(null);
+      await Haptics.selectionAsync();
+      setEditingBudget(false);
+      return;
+    }
+    const value = parseFloat(trimmed);
+    if (!Number.isFinite(value) || value < 0) {
+      setEditingBudget(false);
+      return;
+    }
+    await updateCustomDailyBudget(value);
+    await Haptics.selectionAsync();
+    setEditingBudget(false);
   };
 
   const goTo = async (path: '/budget' | '/categories') => {
@@ -111,6 +138,48 @@ export default function SettingsScreen() {
             </Pressable>
           </View>
         )}
+        <Row
+          icon="target"
+          title="Daily Budget"
+          right={
+            !editingBudget ? (
+              <Pressable onPress={startEditBudget} style={styles.valueBtn} hitSlop={10}>
+                <Text
+                  style={[
+                    styles.valueText,
+                    { color: disciplineState.customDailyBudget != null ? palette.link : palette.textMuted },
+                  ]}
+                >
+                  {disciplineState.customDailyBudget != null
+                    ? `GH₵${disciplineState.customDailyBudget.toFixed(0)}`
+                    : 'Auto'}
+                </Text>
+                <Feather name="edit-2" size={12} color={palette.link} />
+              </Pressable>
+            ) : undefined
+          }
+        />
+        {editingBudget && (
+          <View style={styles.editRow}>
+            <TextInput
+              style={styles.input}
+              keyboardType="decimal-pad"
+              placeholder="GH₵ per day (blank = auto)"
+              placeholderTextColor={palette.textMuted}
+              value={budgetInput}
+              onChangeText={setBudgetInput}
+              autoFocus
+              onSubmitEditing={saveBudget}
+              returnKeyType="done"
+            />
+            <Pressable onPress={saveBudget} style={styles.iconAction} hitSlop={6}>
+              <Feather name="check" size={layout.iconRow} color={palette.link} />
+            </Pressable>
+            <Pressable onPress={() => setEditingBudget(false)} style={styles.iconAction} hitSlop={6}>
+              <Feather name="x" size={layout.iconRow} color={palette.textMuted} />
+            </Pressable>
+          </View>
+        )}
       </GroupedList>
       {/* §4.5.3: explanatory copy lives below the container, outside the surface. */}
       <Text style={[type.caption, styles.footnote]}>
@@ -118,6 +187,9 @@ export default function SettingsScreen() {
       </Text>
       <Text style={[type.caption, styles.footnote]}>
         Below this GH₵/day figure, Home shows a warning instead of safe.
+      </Text>
+      <Text style={[type.caption, styles.footnote]}>
+        Daily Budget overrides the automatic calculation with your own fixed GH₵/day target. Clear it to go back to automatic.
       </Text>
 
       <Overline style={styles.clusterLabel}>Discipline tracking</Overline>

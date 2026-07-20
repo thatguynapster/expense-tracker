@@ -70,17 +70,75 @@ export function getTransactionReversal(transaction: Transaction, accounts: Accou
 
 export function calculateSafeToSpendToday(
   accounts: Account[],
-  currentDate?: Date
+  transactions: Transaction[],
+  customDailyBudget: number | null = null,
+  currentDate: Date = new Date()
 ): SafeToSpendMetrics {
-  const usableBalance = accounts
-    .filter((a) => a.type === 'spendable' && !a.deletedAt)
-    .reduce((sum, a) => sum + a.balance, 0);
+  const spendableAccounts = accounts.filter((a) => a.type === 'spendable' && !a.deletedAt);
+  const usableBalance = spendableAccounts.reduce((sum, a) => sum + a.balance, 0);
+  const spendableIds = new Set(spendableAccounts.map((a) => a.id));
+
+  const y = currentDate.getFullYear();
+  const m = String(currentDate.getMonth() + 1).padStart(2, '0');
+  const d = String(currentDate.getDate()).padStart(2, '0');
+  const todayStr = `${y}-${m}-${d}`;
+  const todaysTransactions = transactions.filter((t) => !t.deletedAt && t.date.startsWith(todayStr));
+
+  // Reconstructs this morning's usable balance by reversing today's
+  // transactions' effect on spendable accounts, so the daily budget stays
+  // fixed all day instead of getting re-averaged down every time something
+  // is spent (that re-averaging was the bug: spending GHS 30 with 10 days
+  // left in the month only used to move "safe to spend today" by GHS 3).
+  const reversedToStartOfDay = todaysTransactions.reduce((sum, t) => {
+    const { accountDeltas } = getTransactionReversal(t, accounts);
+    const spendableDelta = accountDeltas
+      .filter((a) => spendableIds.has(a.accountId))
+      .reduce((s, a) => s + a.delta, 0);
+    return sum + spendableDelta;
+  }, 0);
+  const startOfDayUsableBalance = usableBalance + reversedToStartOfDay;
 
   const daysRemaining = getDaysRemainingInMonth(currentDate);
+  const calculatedDailyBudget = daysRemaining > 0 ? startOfDayUsableBalance / daysRemaining : 0;
+  // `??` (not `||`) so a deliberate 0 budget is honored rather than falling
+  // back to the calculated figure.
+  const dailyBudget = customDailyBudget ?? calculatedDailyBudget;
 
-  const safeToSpendToday = daysRemaining > 0 ? usableBalance / daysRemaining : 0;
+  // Only meaningful once a custom budget is actually set — flags when
+  // spending at that fixed rate for every remaining day (including today)
+  // would run past what the account can actually sustain.
+  const budgetUnsustainable =
+    customDailyBudget != null &&
+    daysRemaining > 0 &&
+    customDailyBudget * daysRemaining > startOfDayUsableBalance;
 
-  return { usableBalance, daysRemaining, safeToSpendToday };
+  // Only money that actually left the spendable pool for real activity
+  // counts against today's budget: expenses, and transfers out to a
+  // protected account. Income, internal spendable<->spendable transfers,
+  // protected->spendable withdrawals, and adjustments don't count — none of
+  // those are "spending".
+  const spentToday = todaysTransactions.reduce((sum, t) => {
+    if (t.type === 'expense' && t.fromAccountId && spendableIds.has(t.fromAccountId)) {
+      return sum + t.amount;
+    }
+    if (
+      t.type === 'transfer' &&
+      t.fromAccountId && spendableIds.has(t.fromAccountId) &&
+      t.toAccountId && !spendableIds.has(t.toAccountId)
+    ) {
+      return sum + t.amount;
+    }
+    return sum;
+  }, 0);
+
+  return {
+    usableBalance,
+    daysRemaining,
+    dailyBudget,
+    spentToday,
+    safeToSpendToday: dailyBudget - spentToday,
+    budgetUnsustainable,
+  };
 }
 
 export function calculateDisciplineDebt(state: DisciplineState): number {

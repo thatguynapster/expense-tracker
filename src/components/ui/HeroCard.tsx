@@ -47,9 +47,13 @@ interface Props {
   family: HeroFamily;
   /** One metadata line, e.g. "17 days left  ·  GH₵2,730.99 usable". */
   meta: string;
+  /** Optional second line, e.g. "GH₵91.03 budget  ·  GH₵32.00 spent today". */
+  secondaryMeta?: string;
+  /** Optional third line, always rendered in caution amber regardless of `family` — a signal distinct from the safe/warning/danger state. */
+  warningNote?: string;
 }
 
-export function HeroCard({ label, amount, family, meta }: Props) {
+export function HeroCard({ label, amount, family, meta, secondaryMeta, warningNote }: Props) {
   const c = FAMILY[family];
   const reduceMotion = useReducedMotion();
   const animated = useSharedValue(0);
@@ -88,6 +92,12 @@ export function HeroCard({ label, amount, family, meta }: Props) {
         <Text style={[styles.digits, { color: c.main }]}>{formatAmount(display)}</Text>
       </View>
       <Text style={[styles.meta, { color: c.sub }]}>{meta}</Text>
+      {secondaryMeta != null && secondaryMeta !== '' && (
+        <Text style={[styles.meta, styles.secondaryMeta, { color: c.sub }]}>{secondaryMeta}</Text>
+      )}
+      {warningNote != null && warningNote !== '' && (
+        <Text style={[styles.meta, styles.warningNote]}>{warningNote}</Text>
+      )}
     </View>
   );
 }
@@ -122,5 +132,13 @@ const styles = StyleSheet.create({
     fontFamily: type.caption.fontFamily,
     fontVariant: ['tabular-nums'],
     marginTop: 8,
+  },
+  secondaryMeta: {
+    marginTop: 2,
+    opacity: 0.8,
+  },
+  warningNote: {
+    marginTop: 6,
+    color: palette.caution,
   },
 });
