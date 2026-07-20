@@ -1,5 +1,5 @@
 import React from 'react';
-import { Platform, StyleSheet, Text, View } from 'react-native';
+import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router } from 'expo-router';
 import { Feather } from '@expo/vector-icons';
@@ -39,17 +39,24 @@ export default function AccountsScreen() {
   };
 
   // Custom row (not <Row>): the Protected badge sits inline after the name,
-  // and zero-balance accounts render present-but-quiet (§4.3.3).
+  // and zero-balance accounts render present-but-quiet (§4.3.3). The row
+  // itself opens this account's transactions; editing moves to its own
+  // trailing icon so it doesn't compete with that primary tap target.
   const AccountRow = ({ account }: { account: Account }) => {
     const isZero = account.balance === 0;
+
+    const goToTransactions = async () => {
+      await Haptics.selectionAsync();
+      router.push({ pathname: '/(tabs)/transactions', params: { accountId: account.id } });
+    };
+
+    const goToEdit = async () => {
+      await Haptics.selectionAsync();
+      router.push({ pathname: '/add-account', params: { id: account.id } });
+    };
+
     return (
-      <PressFeedback
-        style={styles.accountRow}
-        onPress={async () => {
-          await Haptics.selectionAsync();
-          router.push({ pathname: '/add-account', params: { id: account.id } });
-        }}
-      >
+      <PressFeedback style={styles.accountRow} onPress={goToTransactions}>
         <View style={styles.accountName}>
           <Text
             style={[type.rowTitle, isZero && { color: palette.textMuted }]}
@@ -62,6 +69,9 @@ export default function AccountsScreen() {
           )}
         </View>
         <AmountText amount={account.balance} color={isZero ? palette.textMuted : undefined} />
+        <Pressable onPress={goToEdit} style={styles.editBtn} hitSlop={10}>
+          <Feather name="edit-2" size={14} color={palette.link} />
+        </Pressable>
       </PressFeedback>
     );
   };
@@ -162,6 +172,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: layout.gapSm,
+  },
+  editBtn: {
+    padding: 4,
   },
   empty: {
     alignItems: 'center',

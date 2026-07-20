@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { Feather } from "@expo/vector-icons";
 import * as Haptics from "expo-haptics";
 
@@ -47,6 +47,7 @@ export default function TransactionsScreen() {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === "web";
   const fabOffset = useFabBottomOffset();
+  const { accountId: incomingAccountId } = useLocalSearchParams<{ accountId?: string }>();
 
   const accounts = sortAccounts(
     useStore((s) => s.accounts).filter((a) => !a.deletedAt),
@@ -60,9 +61,26 @@ export default function TransactionsScreen() {
   const [filters, setFilters] = useState<TransactionFilters>({
     ...EMPTY_TRANSACTION_FILTERS,
     month: getCurrentMonthId(),
+    accountId: incomingAccountId ?? null,
   });
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [monthDirection, setMonthDirection] = useState<1 | -1>(1);
+
+  // Re-applies when arriving from an account row (Accounts tab) while this
+  // tab is already mounted — the initial useState above only runs once, so
+  // without this a second visit for a different account would be ignored.
+  // Adjusts state during render rather than in an effect (React's own
+  // recommended pattern for "reset/derive state when a prop changes":
+  // https://react.dev/learn/you-might-not-need-an-effect). Doesn't open the
+  // filter panel — the active-filter chip row below the header is enough to
+  // show what's applied without taking over the screen.
+  const [appliedAccountId, setAppliedAccountId] = useState(incomingAccountId);
+  if (incomingAccountId !== appliedAccountId) {
+    setAppliedAccountId(incomingAccountId);
+    if (incomingAccountId) {
+      setFilters((f) => ({ ...f, accountId: incomingAccountId }));
+    }
+  }
 
   const availableMonths = useMemo(() => {
     const months = new Set(transactions.map((t) => t.date.slice(0, 7)));
@@ -122,6 +140,31 @@ export default function TransactionsScreen() {
   };
 
   const filterCount = activeFilterCount(filters);
+
+  // Month has its own always-visible selector (the < Month Year > row), so
+  // only the "extra" filters — the ones with no other persistent UI — get a
+  // chip here.
+  type ActiveFilterKey = 'accountId' | 'categoryId' | 'type';
+  const activeChips = useMemo(() => {
+    const chips: { key: ActiveFilterKey; label: string }[] = [];
+    if (filters.accountId) {
+      const account = accounts.find((a) => a.id === filters.accountId);
+      if (account) chips.push({ key: 'accountId', label: account.name });
+    }
+    if (filters.categoryId) {
+      const category = categories.find((c) => c.id === filters.categoryId);
+      if (category) chips.push({ key: 'categoryId', label: category.name });
+    }
+    if (filters.type) {
+      chips.push({ key: 'type', label: TYPE_LABELS[filters.type] });
+    }
+    return chips;
+  }, [filters.accountId, filters.categoryId, filters.type, accounts, categories]);
+
+  const clearFilter = async (key: ActiveFilterKey) => {
+    await Haptics.selectionAsync();
+    setFilters((f) => ({ ...f, [key]: null }));
+  };
 
   return (
     <View style={styles.root}>
@@ -191,6 +234,24 @@ export default function TransactionsScreen() {
                   </Pressable>
                 </View>
               </View>
+
+              {activeChips.length > 0 && (
+                <View style={styles.activeChipsRow}>
+                  {activeChips.map((chip) => (
+                    <Pressable
+                      key={chip.key}
+                      style={styles.activeChip}
+                      onPress={() => clearFilter(chip.key)}
+                      hitSlop={6}
+                    >
+                      <Text style={styles.activeChipText} numberOfLines={1}>
+                        {chip.label}
+                      </Text>
+                      <Feather name="x" size={12} color={palette.link} />
+                    </Pressable>
+                  ))}
+                </View>
+              )}
 
               {filtersOpen && (
                 <View style={styles.filterPanel}>
@@ -370,6 +431,28 @@ const styles = StyleSheet.create({
     fontSize: type.badge.fontSize,
     fontFamily: type.badge.fontFamily,
     color: palette.canvas,
+  },
+  activeChipsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: layout.gapSm,
+    marginBottom: layout.sectionGap,
+  },
+  activeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: layout.radiusPill,
+    borderWidth: 1,
+    backgroundColor: palette.surfaceRaised,
+    borderColor: palette.link,
+  },
+  activeChipText: {
+    fontSize: type.caption.fontSize,
+    fontFamily: type.bodyBold.fontFamily,
+    color: palette.link,
   },
   filterPanel: {
     backgroundColor: palette.surface,
