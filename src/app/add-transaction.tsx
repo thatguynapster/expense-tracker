@@ -82,9 +82,18 @@ export default function AddTransactionScreen() {
   const [countsAsDebt, setCountsAsDebt] = useState(false);
 
   useEffect(() => {
-    // Adjustments have their own screen (add-adjustment.tsx) and aren't
-    // editable at all — this form only ever loads expense/income/transfer.
-    if (!existing || existing.type === 'adjustment') return;
+    // Adjustments have their own screen (add-adjustment.tsx). Loan
+    // disbursements/repayments (and a repayment's onward transfer leg,
+    // recognizable by loanPaymentId even though its type is plain
+    // 'transfer') are managed entirely from the Loans tab. None of these
+    // are editable here — this form only ever loads expense/income/transfer.
+    if (
+      !existing ||
+      existing.type === 'adjustment' ||
+      existing.type === 'loan_disbursement' ||
+      existing.type === 'loan_repayment' ||
+      existing.loanPaymentId
+    ) return;
     setTxType(existing.type);
     setAmount(String(existing.amount));
     setNote(existing.note ?? '');

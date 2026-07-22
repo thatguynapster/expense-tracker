@@ -1,5 +1,5 @@
 export type AccountType = 'spendable' | 'protected';
-export type TransactionType = 'income' | 'expense' | 'transfer' | 'adjustment';
+export type TransactionType = 'income' | 'expense' | 'transfer' | 'adjustment' | 'loan_disbursement' | 'loan_repayment';
 export type CategoryType = 'income' | 'expense';
 export type SafeToSpendStatus = 'safe' | 'warning' | 'danger';
 
@@ -41,6 +41,10 @@ export interface Transaction {
   savingsAccountId?: string | null;
   savingsAmount?: number | null;
   countsAsDebtRepayment?: boolean;
+  /** Set only on a loan's disbursement mirror transaction — links back to the Loan it belongs to. Null everywhere else. Locks the transaction from being edited/deleted directly (see transaction-detail.tsx) — only deleting the Loan reverses it. */
+  loanId?: string | null;
+  /** Set on a loan repayment's credit transaction and, when the money moved on to a different account, its onward transfer leg — links back to the LoanPayment. Null everywhere else. Same delete lock as loanId. */
+  loanPaymentId?: string | null;
   createdAt: string;
   updatedAt: string;
   /** null = not yet synced to the server; set to the timestamp of the last successful sync. */
@@ -57,6 +61,8 @@ export interface DisciplineState {
   safeToSpendWarningThreshold: number;
   /** User-set GHS/day target. When set, replaces the automatic balance/days-remaining calculation entirely for "Safe to Spend Today"; null uses the automatic calculation. */
   customDailyBudget: number | null;
+  /** Timestamp of the one-time loan-repayment balance correction (storage.ts backfillLoanTransactions), or null if it hasn't run yet. Lives here — synced data — rather than a local-only flag, so a device that pulls already-corrected balances also pulls the fact that they're already corrected, instead of re-applying the correction on top of numbers that don't need it. */
+  loanRepaymentBalanceCorrectionAppliedAt: string | null;
   createdAt: string;
   updatedAt: string;
   /** null = not yet synced to the server; set to the timestamp of the last successful sync. */

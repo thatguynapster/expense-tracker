@@ -62,6 +62,8 @@ export interface AddTransferParams {
   note?: string;
   reason?: string;
   countsAsDebtRepayment?: boolean;
+  /** Internal use only (not exposed on the add-transaction form) — set when this transfer is the onward leg of a loan repayment, so transaction-detail.tsx locks it the same as the repayment itself. */
+  loanPaymentId?: string | null;
 }
 
 export interface AddAdjustmentParams {
@@ -219,6 +221,7 @@ export const useStore = create<AppStore>((set, get) => ({
     totalExtraSavings: 0,
     safeToSpendWarningThreshold: DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
     customDailyBudget: null,
+    loanRepaymentBalanceCorrectionAppliedAt: null,
     createdAt: now(),
     updatedAt: now(),
     syncedAt: null,
@@ -259,6 +262,12 @@ export const useStore = create<AppStore>((set, get) => ({
       } else {
         void get().syncNow();
       }
+    } else {
+      // Promptly pushes any dirty records already sitting in local storage
+      // from this load — in particular the one-time loan-transaction
+      // backfill (storage.ts migrate()) — instead of waiting for the next
+      // unrelated edit to trigger a sync.
+      void get().syncNow();
     }
   },
 
@@ -273,9 +282,40 @@ export const useStore = create<AppStore>((set, get) => ({
       syncedAt: null,
       deletedAt: null,
     };
+
+    // A non-zero starting balance is itself a balance-affecting event —
+    // every one of those needs a visible transaction behind it (the whole
+    // point of the ledger is to be a true and fair audit of every addition
+    // and deduction), so this mirrors it as an adjustment exactly like
+    // addAdjustment does, rather than letting the balance just appear with
+    // no trace. Dated today at midnight, matching how every other
+    // transaction's `date` is normalized (see dateToStr in the screens that
+    // collect one) — account creation has no date picker of its own.
+    const today = new Date();
+    const todayDateStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}T00:00:00.000Z`;
+    const startingBalanceAdjustment: Transaction | null =
+      initialBalance !== 0
+        ? {
+            id: genId(),
+            type: "adjustment",
+            amount: Math.abs(initialBalance),
+            date: todayDateStr,
+            fromAccountId: initialBalance < 0 ? account.id : null,
+            toAccountId: initialBalance > 0 ? account.id : null,
+            note: "Starting balance",
+            createdAt: account.createdAt,
+            updatedAt: account.createdAt,
+            syncedAt: null,
+            deletedAt: null,
+          }
+        : null;
+
     const accounts = [...get().accounts, account];
-    set({ accounts });
-    await persist({ ...get(), accounts });
+    const transactions = startingBalanceAdjustment
+      ? [...get().transactions, startingBalanceAdjustment]
+      : get().transactions;
+    set({ accounts, transactions });
+    await persist({ ...get(), accounts, transactions });
     void get().syncNow();
   },
 
@@ -523,6 +563,7 @@ export const useStore = create<AppStore>((set, get) => ({
       note,
       reason,
       countsAsDebtRepayment,
+      loanPaymentId,
     } = p;
 
     if (amount <= 0)
@@ -557,6 +598,7 @@ export const useStore = create<AppStore>((set, get) => ({
       note: note ?? null,
       reason: reason ?? null,
       countsAsDebtRepayment: countsAsDebtRepayment ?? false,
+      loanPaymentId: loanPaymentId ?? null,
       createdAt: now(),
       updatedAt: now(),
       syncedAt: null,
@@ -721,8 +763,6 @@ export const useStore = create<AppStore>((set, get) => ({
       };
     }
 
-    // Disbursement debits the source account directly — it deliberately does
-    // NOT create a Transaction, since a loan out isn't an expense (PRD §4.5).
     const loan: Loan = {
       id: genId(),
       borrowerName: borrowerName.trim(),
@@ -738,6 +778,29 @@ export const useStore = create<AppStore>((set, get) => ({
       deletedAt: null,
     };
 
+    // Debits the source account directly (unchanged), but also mirrors the
+    // disbursement as a real Transaction now — a loan out still isn't an
+    // expense (PRD §4.5, excluded from getMonthSummary), but it needs to
+    // show up in that account's own history instead of the balance just
+    // silently dropping. Locked from independent edit/delete in
+    // transaction-detail.tsx via loanId — only deleting the Loan reverses it.
+    const disbursement: Transaction = {
+      id: genId(),
+      type: "loan_disbursement",
+      amount: principal,
+      date: dateLent,
+      fromAccountId: sourceAccountId,
+      toAccountId: null,
+      categoryId: null,
+      note: note ?? null,
+      loanId: loan.id,
+      loanPaymentId: null,
+      createdAt: now(),
+      updatedAt: now(),
+      syncedAt: null,
+      deletedAt: null,
+    };
+
     const accounts = get().accounts.map((a) =>
       a.id === sourceAccountId
         ? {
@@ -749,8 +812,9 @@ export const useStore = create<AppStore>((set, get) => ({
         : a,
     );
     const loans = [...get().loans, loan];
-    set({ accounts, loans });
-    await persist({ ...get(), accounts, loans });
+    const transactions = [...get().transactions, disbursement];
+    set({ accounts, loans, transactions });
+    await persist({ ...get(), accounts, loans, transactions });
     void get().syncNow();
 
     return { success: true };
@@ -779,13 +843,15 @@ export const useStore = create<AppStore>((set, get) => ({
       };
     }
 
-    // Repayment always credits the loan's source account (where the
-    // principal was disbursed from), not necessarily destinationAccountId —
-    // that field is kept purely as a record of where the cash physically
-    // landed. Crediting anywhere else would leave the source account's
-    // balance permanently understated even after the loan is fully repaid.
-    // Deliberately does NOT create a Transaction, since loan repayment isn't
-    // income (PRD §4.5).
+    // Repayment always credits the loan's source account first (where the
+    // principal was disbursed from) — crediting anywhere else would leave
+    // its balance permanently understated even after the loan is fully
+    // repaid. If the cash actually landed in a different account, that
+    // credit is immediately followed by an ordinary transfer moving it on to
+    // destinationAccountId (below), so each account's own history stays a
+    // complete, self-contained story instead of the credit vanishing into a
+    // black box only the Loans tab can explain. Not income (PRD §4.5) —
+    // excluded from getMonthSummary the same way loan_disbursement is.
     const payment: LoanPayment = {
       id: genId(),
       loanId,
@@ -793,6 +859,23 @@ export const useStore = create<AppStore>((set, get) => ({
       date,
       destinationAccountId,
       note: note ?? null,
+      createdAt: now(),
+      updatedAt: now(),
+      syncedAt: null,
+      deletedAt: null,
+    };
+
+    const repaymentCredit: Transaction = {
+      id: genId(),
+      type: "loan_repayment",
+      amount,
+      date,
+      fromAccountId: null,
+      toAccountId: loan.sourceAccountId,
+      categoryId: null,
+      note: note ?? null,
+      loanId: null,
+      loanPaymentId: payment.id,
       createdAt: now(),
       updatedAt: now(),
       syncedAt: null,
@@ -810,9 +893,22 @@ export const useStore = create<AppStore>((set, get) => ({
         : a,
     );
     const loanPayments = [...get().loanPayments, payment];
-    set({ accounts, loanPayments });
-    await persist({ ...get(), accounts, loanPayments });
+    const transactions = [...get().transactions, repaymentCredit];
+    set({ accounts, loanPayments, transactions });
+    await persist({ ...get(), accounts, loanPayments, transactions });
     void get().syncNow();
+
+    if (destinationAccountId !== loan.sourceAccountId) {
+      await get().addTransfer({
+        amount,
+        fromAccountId: loan.sourceAccountId,
+        toAccountId: destinationAccountId,
+        date,
+        note: note ?? undefined,
+        countsAsDebtRepayment: false,
+        loanPaymentId: payment.id,
+      });
+    }
 
     return { success: true };
   },
@@ -846,17 +942,50 @@ export const useStore = create<AppStore>((set, get) => ({
     const activePayments = get().loanPayments.filter(
       (p) => p.loanId === id && !p.deletedAt,
     );
-    const totalRepaid = activePayments.reduce((sum, p) => sum + p.amount, 0);
+    const activePaymentIds = new Set(activePayments.map((p) => p.id));
 
-    // Undoes the original disbursement debit and every repayment credit
-    // against sourceAccountId, leaving its balance exactly as if the loan
-    // had never existed — same reversal approach as deleteTransaction.
-    const netDelta = loan.principal - totalRepaid;
+    // Reverses every transaction this loan generated — the disbursement,
+    // each repayment's credit, and each repayment's onward transfer leg (if
+    // the money didn't land back in sourceAccountId) — through the same
+    // getTransactionReversal used everywhere else, rather than a bespoke
+    // net-delta shortcut. A shortcut applied only to sourceAccountId would
+    // be wrong now: a repayment's money may have moved on to a different
+    // account entirely, so sourceAccountId's own net change from that
+    // repayment is zero, not +amount.
+    const linkedTransactions = get().transactions.filter(
+      (t) =>
+        !t.deletedAt &&
+        (t.loanId === id || (t.loanPaymentId != null && activePaymentIds.has(t.loanPaymentId))),
+    );
+
+    const accountDeltaMap = new Map<string, number>();
+    let totalWithdrawnFromSavingsDelta = 0;
+    let totalExtraSavingsDelta = 0;
+    for (const t of linkedTransactions) {
+      const reversal = getTransactionReversal(t, get().accounts);
+      for (const d of reversal.accountDeltas) {
+        accountDeltaMap.set(d.accountId, (accountDeltaMap.get(d.accountId) ?? 0) + d.delta);
+      }
+      totalWithdrawnFromSavingsDelta += reversal.disciplineDelta.totalWithdrawnFromSavings;
+      totalExtraSavingsDelta += reversal.disciplineDelta.totalExtraSavings;
+    }
+
     const accounts = get().accounts.map((a) =>
-      a.id === loan.sourceAccountId
-        ? { ...a, balance: a.balance + netDelta, updatedAt: now(), syncedAt: null }
+      accountDeltaMap.has(a.id)
+        ? { ...a, balance: a.balance + accountDeltaMap.get(a.id)!, updatedAt: now(), syncedAt: null }
         : a,
     );
+
+    const disciplineState =
+      totalWithdrawnFromSavingsDelta !== 0 || totalExtraSavingsDelta !== 0
+        ? {
+            ...get().disciplineState,
+            totalWithdrawnFromSavings: get().disciplineState.totalWithdrawnFromSavings + totalWithdrawnFromSavingsDelta,
+            totalExtraSavings: get().disciplineState.totalExtraSavings + totalExtraSavingsDelta,
+            updatedAt: now(),
+            syncedAt: null,
+          }
+        : get().disciplineState;
 
     const loans = get().loans.map((l) =>
       l.id === id
@@ -864,13 +993,19 @@ export const useStore = create<AppStore>((set, get) => ({
         : l,
     );
     const loanPayments = get().loanPayments.map((p) =>
-      p.loanId === id && !p.deletedAt
+      activePaymentIds.has(p.id)
         ? { ...p, deletedAt: now(), updatedAt: now(), syncedAt: null }
         : p,
     );
+    const linkedTransactionIds = new Set(linkedTransactions.map((t) => t.id));
+    const transactions = get().transactions.map((t) =>
+      linkedTransactionIds.has(t.id)
+        ? { ...t, deletedAt: now(), updatedAt: now(), syncedAt: null }
+        : t,
+    );
 
-    set({ accounts, loans, loanPayments });
-    await persist({ ...get(), accounts, loans, loanPayments });
+    set({ accounts, loans, loanPayments, transactions, disciplineState });
+    await persist({ ...get(), accounts, loans, loanPayments, transactions, disciplineState });
     void get().syncNow();
 
     return { success: true };

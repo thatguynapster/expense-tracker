@@ -54,6 +54,16 @@ export function TransactionItem({ transaction, accounts, categories }: Props) {
     // changes what your balance actually is, unlike a transfer between your
     // own accounts, which nets to zero.
     amountKind = transaction.toAccountId ? "income" : "expense";
+  } else if (transaction.type === "loan_disbursement") {
+    title = "Loan Given";
+    account = fromAccount?.name ?? "";
+    visual = { tint: palette.alert, icon: "arrow-up-right" };
+    amountKind = "expense";
+  } else if (transaction.type === "loan_repayment") {
+    title = "Loan Repaid";
+    account = toAccount?.name ?? "";
+    visual = { tint: palette.positive, icon: "arrow-down-left" };
+    amountKind = "income";
   } else {
     title = "Transfer";
     account = `${fromAccount?.name ?? "?"} → ${toAccount?.name ?? "?"}`;

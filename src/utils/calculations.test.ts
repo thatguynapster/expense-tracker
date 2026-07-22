@@ -332,6 +332,24 @@ describe('getTransactionReversal', () => {
     );
     expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: 0 });
   });
+
+  it('reverses a loan disbursement by crediting the source account back, with no discipline effect', () => {
+    const reversal = getTransactionReversal(
+      reversalTransaction({ type: 'loan_disbursement', amount: 200, fromAccountId: 'acc_main', toAccountId: null }),
+      [],
+    );
+    expect(reversal.accountDeltas).toEqual([{ accountId: 'acc_main', delta: 200 }]);
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: 0 });
+  });
+
+  it('reverses a loan repayment credit by debiting the source account back, with no discipline effect', () => {
+    const reversal = getTransactionReversal(
+      reversalTransaction({ type: 'loan_repayment', amount: 80, fromAccountId: null, toAccountId: 'acc_main' }),
+      [],
+    );
+    expect(reversal.accountDeltas).toEqual([{ accountId: 'acc_main', delta: -80 }]);
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: 0 });
+  });
 });
 
 describe('getSafeToSpendStatus', () => {

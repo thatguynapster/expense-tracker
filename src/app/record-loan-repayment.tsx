@@ -129,10 +129,10 @@ export default function RecordLoanRepaymentScreen() {
 
         <InfoBanner>
           Repayments always credit
-          {sourceAccount ? ` ${sourceAccount.name}` : ' the account this was originally given from'}, so
-          its balance recovers regardless of where you actually received the cash. &quot;Received
-          Into&quot; is just a record — it won&apos;t affect that account&apos;s balance. This won&apos;t
-          show up as income.
+          {sourceAccount ? ` ${sourceAccount.name}` : ' the account this was originally given from'} first,
+          so its balance recovers regardless of where you actually received the cash. If &quot;Received
+          Into&quot; is a different account, the money then transfers on to it — both steps show up in
+          your transaction history, but neither counts as income.
         </InfoBanner>
 
         <Field label="Date">

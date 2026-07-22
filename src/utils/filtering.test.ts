@@ -47,6 +47,26 @@ describe('filterTransactions', () => {
     expect(result.map((t) => t.id)).toEqual(['t1', 't2']);
   });
 
+  it("filters by account, also matching an income's forced-savings destination", () => {
+    // An income transaction touches up to three accounts: toAccountId (the
+    // spendable portion), and savingsAccountId (the forced-savings split).
+    // Filtering by the savings account must surface it too, or that
+    // account's history silently omits every income that funded it.
+    const transactions = [
+      transaction({
+        id: 't1',
+        type: 'income',
+        fromAccountId: null,
+        toAccountId: 'acc_spendable',
+        savingsAccountId: 'acc_savings',
+        savingsAmount: 50,
+      }),
+      transaction({ id: 't2', fromAccountId: 'acc_unrelated' }),
+    ];
+    const result = filterTransactions(transactions, { ...EMPTY_TRANSACTION_FILTERS, accountId: 'acc_savings' });
+    expect(result.map((t) => t.id)).toEqual(['t1']);
+  });
+
   it('filters by category', () => {
     const transactions = [
       transaction({ id: 't1', categoryId: 'cat_food' }),

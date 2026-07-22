@@ -45,6 +45,20 @@ export function getTransactionReversal(transaction: Transaction, accounts: Accou
     if (transaction.toAccountId) {
       accountDeltas.push({ accountId: transaction.toAccountId, delta: -transaction.amount });
     }
+  } else if (transaction.type === 'loan_disbursement') {
+    // Same shape as expense — mirrors principal leaving sourceAccountId.
+    // Never touches Discipline Debt: lending money isn't real spending.
+    if (transaction.fromAccountId) {
+      accountDeltas.push({ accountId: transaction.fromAccountId, delta: transaction.amount });
+    }
+  } else if (transaction.type === 'loan_repayment') {
+    // Same shape as a plain credit (no savings split, unlike income) — mirrors
+    // only the credit-to-sourceAccountId leg. If the repayment also moved on
+    // to a different account, that's a separate ordinary 'transfer'
+    // transaction, reversed through the branch below.
+    if (transaction.toAccountId) {
+      accountDeltas.push({ accountId: transaction.toAccountId, delta: -transaction.amount });
+    }
   } else {
     if (transaction.fromAccountId) {
       accountDeltas.push({ accountId: transaction.fromAccountId, delta: transaction.amount });

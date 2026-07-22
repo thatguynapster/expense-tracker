@@ -3,7 +3,7 @@ import type { Transaction, TransactionType } from '@/lib/types';
 export interface TransactionFilters {
   /** `YYYY-MM`, or null for all months. */
   month: string | null;
-  /** Matches either side of a transfer (fromAccountId or toAccountId), or null for all accounts. */
+  /** Matches fromAccountId, toAccountId, or (for an income's forced-savings split) savingsAccountId — or null for all accounts. */
   accountId: string | null;
   categoryId: string | null;
   type: TransactionType | null;
@@ -19,7 +19,14 @@ export const EMPTY_TRANSACTION_FILTERS: TransactionFilters = {
 export function filterTransactions(transactions: Transaction[], filters: TransactionFilters): Transaction[] {
   return transactions.filter((t) => {
     if (filters.month && !t.date.startsWith(filters.month)) return false;
-    if (filters.accountId && t.fromAccountId !== filters.accountId && t.toAccountId !== filters.accountId) return false;
+    if (
+      filters.accountId &&
+      t.fromAccountId !== filters.accountId &&
+      t.toAccountId !== filters.accountId &&
+      t.savingsAccountId !== filters.accountId
+    ) {
+      return false;
+    }
     if (filters.categoryId && t.categoryId !== filters.categoryId) return false;
     if (filters.type && t.type !== filters.type) return false;
     return true;

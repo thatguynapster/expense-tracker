@@ -32,7 +32,7 @@ async function main() {
       { id: 'cat_verify_1', name: 'Verify Food', type: 'expense', createdAt: now(), updatedAt: now(), syncedAt: null, deletedAt: null },
     ],
     transactions: [],
-    disciplineState: { id: 'discipline_verify_test', totalWithdrawnFromSavings: 0, totalExtraSavings: 0, safeToSpendWarningThreshold: 50, customDailyBudget: null, createdAt: now(), updatedAt: now(), syncedAt: null, deletedAt: null },
+    disciplineState: { id: 'discipline_verify_test', totalWithdrawnFromSavings: 0, totalExtraSavings: 0, safeToSpendWarningThreshold: 50, customDailyBudget: null, loanRepaymentBalanceCorrectionAppliedAt: null, createdAt: now(), updatedAt: now(), syncedAt: null, deletedAt: null },
     loans: [
       { id: 'loan_verify_1', borrowerName: 'Verify Borrower', principal: 200, dateLent: now(), expectedRepaymentDate: null, note: null, sourceAccountId: 'acc_verify_1', settledAt: null, createdAt: now(), updatedAt: now(), syncedAt: null, deletedAt: null },
     ],
