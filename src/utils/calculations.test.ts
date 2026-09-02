@@ -269,6 +269,51 @@ describe('getTransactionReversal', () => {
     expect(reversal.disciplineDelta.totalExtraSavings).toBe(0);
   });
 
+  it('reverses a current-shape income (no savingsAccountId) by debiting only the full amount from toAccountId', () => {
+    // The forced-savings portion now moves via a separate linked transfer
+    // transaction, reversed independently through the transfer branch — this
+    // income transaction only ever credited toAccountId, for the full amount.
+    const reversal = getTransactionReversal(
+      reversalTransaction({
+        type: 'income',
+        amount: 100,
+        toAccountId: 'acc_spendable',
+        savingsAccountId: null,
+        savingsAmount: 30,
+      }),
+      [],
+    );
+    expect(reversal.accountDeltas).toEqual([{ accountId: 'acc_spendable', delta: -100 }]);
+    // Extra-savings math is still driven by savingsAmount either way.
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: -20 });
+  });
+
+  it("reverses a current-shape income's linked savings transfer through the ordinary transfer branch", () => {
+    const accounts = [
+      account({ id: 'acc_spendable', type: 'spendable' }),
+      account({ id: 'acc_protected', type: 'protected' }),
+    ];
+    const reversal = getTransactionReversal(
+      reversalTransaction({
+        type: 'transfer',
+        amount: 30,
+        fromAccountId: 'acc_spendable',
+        toAccountId: 'acc_protected',
+        countsAsDebtRepayment: false,
+        incomeTransactionId: 'tx_income_1',
+      }),
+      accounts,
+    );
+    expect(reversal.accountDeltas).toEqual([
+      { accountId: 'acc_spendable', delta: 30 },
+      { accountId: 'acc_protected', delta: -30 },
+    ]);
+    // countsAsDebtRepayment is always false for this leg — the extra-savings
+    // credit is already fully accounted for on the linked income transaction,
+    // so this transfer must not touch discipline debt a second time.
+    expect(reversal.disciplineDelta).toEqual({ totalWithdrawnFromSavings: 0, totalExtraSavings: 0 });
+  });
+
   it('reverses a plain transfer between two spendable accounts with no discipline effect', () => {
     const accounts = [
       account({ id: 'acc_a', type: 'spendable' }),

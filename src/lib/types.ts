@@ -45,6 +45,8 @@ export interface Transaction {
   loanId?: string | null;
   /** Set on a loan repayment's credit transaction and, when the money moved on to a different account, its onward transfer leg — links back to the LoanPayment. Null everywhere else. Same delete lock as loanId. */
   loanPaymentId?: string | null;
+  /** Set only on an income's forced-savings transfer leg — links back to the primary 'income' transaction it split off from. Null everywhere else. Same delete lock as loanId/loanPaymentId: deleting the primary income transaction cascades to this one; it can't be deleted independently. */
+  incomeTransactionId?: string | null;
   createdAt: string;
   updatedAt: string;
   /** null = not yet synced to the server; set to the timestamp of the last successful sync. */
@@ -61,8 +63,6 @@ export interface DisciplineState {
   safeToSpendWarningThreshold: number;
   /** User-set GHS/day target. When set, replaces the automatic balance/days-remaining calculation entirely for "Safe to Spend Today"; null uses the automatic calculation. */
   customDailyBudget: number | null;
-  /** Timestamp of the one-time loan-repayment balance correction (storage.ts backfillLoanTransactions), or null if it hasn't run yet. Lives here — synced data — rather than a local-only flag, so a device that pulls already-corrected balances also pulls the fact that they're already corrected, instead of re-applying the correction on top of numbers that don't need it. */
-  loanRepaymentBalanceCorrectionAppliedAt: string | null;
   createdAt: string;
   updatedAt: string;
   /** null = not yet synced to the server; set to the timestamp of the last successful sync. */

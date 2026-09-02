@@ -221,7 +221,6 @@ export const useStore = create<AppStore>((set, get) => ({
     totalExtraSavings: 0,
     safeToSpendWarningThreshold: DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
     customDailyBudget: null,
-    loanRepaymentBalanceCorrectionAppliedAt: null,
     createdAt: now(),
     updatedAt: now(),
     syncedAt: null,
@@ -409,14 +408,23 @@ export const useStore = create<AppStore>((set, get) => ({
     const spendableAmount = amount - selectedSavingsAmount;
     const extraSavings = Math.max(0, selectedSavingsAmount - minimumSavings);
 
-    const transaction: Transaction = {
+    // The full amount is credited to the spendable account, then — same
+    // pattern as a loan repayment's onward leg — the forced-savings portion
+    // moves on via its own linked transfer transaction, so the savings
+    // account gets a real, correctly-labeled transaction of its own instead
+    // of a field buried inside the income transaction with no trace in that
+    // account's own history. savingsAmount stays on the income transaction
+    // (savingsAccountId no longer does) purely to compute the
+    // above-the-minimum discipline-debt credit above, on both creation and
+    // reversal — see getTransactionReversal.
+    const incomeTransaction: Transaction = {
       id: genId(),
       type: "income",
       amount,
       date,
       categoryId: categoryId ?? null,
       toAccountId: spendableAccountId,
-      savingsAccountId: protectedAccountId,
+      savingsAccountId: null,
       savingsAmount: selectedSavingsAmount,
       note: note ?? null,
       createdAt: now(),
@@ -424,6 +432,29 @@ export const useStore = create<AppStore>((set, get) => ({
       syncedAt: null,
       deletedAt: null,
     };
+
+    // Validation above guarantees selectedSavingsAmount >= minimumSavings >
+    // 0 whenever amount > 0, so this is never actually null in practice —
+    // guarded anyway in case that validation is ever relaxed.
+    const savingsTransfer: Transaction | null =
+      selectedSavingsAmount > 0
+        ? {
+            id: genId(),
+            type: "transfer",
+            amount: selectedSavingsAmount,
+            date,
+            fromAccountId: spendableAccountId,
+            toAccountId: protectedAccountId,
+            note: note ?? null,
+            reason: null,
+            countsAsDebtRepayment: false,
+            incomeTransactionId: incomeTransaction.id,
+            createdAt: now(),
+            updatedAt: now(),
+            syncedAt: null,
+            deletedAt: null,
+          }
+        : null;
 
     const accounts = get().accounts.map((a) => {
       if (a.id === spendableAccountId)
@@ -450,7 +481,9 @@ export const useStore = create<AppStore>((set, get) => ({
       syncedAt: null,
     };
 
-    const transactions = [...get().transactions, transaction];
+    const transactions = savingsTransfer
+      ? [...get().transactions, incomeTransaction, savingsTransfer]
+      : [...get().transactions, incomeTransaction];
     set({ accounts, transactions, disciplineState });
     await persist({ ...get(), accounts, transactions, disciplineState });
     void get().syncNow();
@@ -686,23 +719,39 @@ export const useStore = create<AppStore>((set, get) => ({
     if (!transaction)
       return { success: false, error: "Transaction not found." };
 
-    const reversal = getTransactionReversal(transaction, get().accounts);
-    const deltaMap = new Map(
-      reversal.accountDeltas.map((d) => [d.accountId, d.delta]),
+    // An income's forced-savings transfer leg is linked back via
+    // incomeTransactionId (locked from independent delete in
+    // transaction-detail.tsx) — deleting the primary income transaction
+    // must cascade to reverse that leg too, the same way deleteLoan cascades
+    // to every transaction a loan generated.
+    const linkedTransactions = get().transactions.filter(
+      (t) => !t.deletedAt && t.incomeTransactionId === id,
     );
+    const toReverse = [transaction, ...linkedTransactions];
+
+    const accountDeltaMap = new Map<string, number>();
+    let totalWithdrawnFromSavings = 0;
+    let totalExtraSavings = 0;
+    for (const t of toReverse) {
+      const reversal = getTransactionReversal(t, get().accounts);
+      for (const d of reversal.accountDeltas) {
+        accountDeltaMap.set(d.accountId, (accountDeltaMap.get(d.accountId) ?? 0) + d.delta);
+      }
+      totalWithdrawnFromSavings += reversal.disciplineDelta.totalWithdrawnFromSavings;
+      totalExtraSavings += reversal.disciplineDelta.totalExtraSavings;
+    }
+
     const accounts = get().accounts.map((a) =>
-      deltaMap.has(a.id)
+      accountDeltaMap.has(a.id)
         ? {
             ...a,
-            balance: a.balance + deltaMap.get(a.id)!,
+            balance: a.balance + accountDeltaMap.get(a.id)!,
             updatedAt: now(),
             syncedAt: null,
           }
         : a,
     );
 
-    const { totalWithdrawnFromSavings, totalExtraSavings } =
-      reversal.disciplineDelta;
     const disciplineState =
       totalWithdrawnFromSavings !== 0 || totalExtraSavings !== 0
         ? {
@@ -717,8 +766,9 @@ export const useStore = create<AppStore>((set, get) => ({
           }
         : get().disciplineState;
 
+    const toReverseIds = new Set(toReverse.map((t) => t.id));
     const transactions = get().transactions.map((t) =>
-      t.id === id
+      toReverseIds.has(t.id)
         ? { ...t, deletedAt: now(), updatedAt: now(), syncedAt: null }
         : t,
     );

@@ -85,14 +85,18 @@ export default function AddTransactionScreen() {
     // Adjustments have their own screen (add-adjustment.tsx). Loan
     // disbursements/repayments (and a repayment's onward transfer leg,
     // recognizable by loanPaymentId even though its type is plain
-    // 'transfer') are managed entirely from the Loans tab. None of these
-    // are editable here — this form only ever loads expense/income/transfer.
+    // 'transfer') are managed entirely from the Loans tab. An income's
+    // forced-savings transfer leg (recognizable by incomeTransactionId,
+    // also plain 'transfer') is managed by editing/deleting the income
+    // transaction it split off from. None of these are editable here —
+    // this form only ever loads expense/income/transfer.
     if (
       !existing ||
       existing.type === 'adjustment' ||
       existing.type === 'loan_disbursement' ||
       existing.type === 'loan_repayment' ||
-      existing.loanPaymentId
+      existing.loanPaymentId ||
+      existing.incomeTransactionId
     ) return;
     setTxType(existing.type);
     setAmount(String(existing.amount));

@@ -26,13 +26,25 @@ export function getTransactionReversal(transaction: Transaction, accounts: Accou
     }
   } else if (transaction.type === 'income') {
     const savingsAmount = transaction.savingsAmount ?? 0;
-    const spendableAmount = transaction.amount - savingsAmount;
-    if (transaction.toAccountId) {
-      accountDeltas.push({ accountId: transaction.toAccountId, delta: -spendableAmount });
-    }
     if (transaction.savingsAccountId) {
+      // Old shape (pre forced-savings-transfer split): this one transaction
+      // credited both toAccountId (the spendable portion) and
+      // savingsAccountId (the savings portion) directly.
+      const spendableAmount = transaction.amount - savingsAmount;
+      if (transaction.toAccountId) {
+        accountDeltas.push({ accountId: transaction.toAccountId, delta: -spendableAmount });
+      }
       accountDeltas.push({ accountId: transaction.savingsAccountId, delta: -savingsAmount });
+    } else if (transaction.toAccountId) {
+      // Current shape: toAccountId was credited the full amount; any
+      // forced-savings portion moved on via a separate linked 'transfer'
+      // transaction (incomeTransactionId), reversed independently through
+      // the transfer branch below when that transaction is reversed.
+      accountDeltas.push({ accountId: transaction.toAccountId, delta: -transaction.amount });
     }
+    // Only the amount saved beyond the required minimum reduces discipline
+    // debt — true for both shapes, since savingsAmount is retained on the
+    // income transaction either way specifically for this calculation.
     const minimumSavings = transaction.amount * 0.1;
     totalExtraSavings -= Math.max(0, savingsAmount - minimumSavings);
   } else if (transaction.type === 'adjustment') {
