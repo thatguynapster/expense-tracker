@@ -67,10 +67,24 @@ function migrate(data: AppData): AppData {
     type: category.type ?? 'expense',
   });
 
+  // Rebuilt field-by-field (not spread) so a field dropped from the
+  // DisciplineState shape — e.g. the short-lived
+  // loanRepaymentBalanceCorrectionAppliedAt — can't linger in a record
+  // loaded from a pre-upgrade AsyncStorage blob and keep riding along in
+  // every sync payload indefinitely. The server already guards against this
+  // on its end (pickKnownFields in folio-server/lib/sync.ts), but a device
+  // stuck with the stale field marks disciplineState dirty forever for no
+  // reason, so it's worth dropping at the source too.
   const withWarningThreshold = (state: DisciplineState): DisciplineState => ({
-    ...withSyncFields(state),
+    id: state.id,
+    totalWithdrawnFromSavings: state.totalWithdrawnFromSavings,
+    totalExtraSavings: state.totalExtraSavings,
     safeToSpendWarningThreshold: state.safeToSpendWarningThreshold ?? DEFAULT_SAFE_TO_SPEND_WARNING_THRESHOLD,
     customDailyBudget: state.customDailyBudget ?? null,
+    createdAt: state.createdAt,
+    updatedAt: state.updatedAt,
+    syncedAt: state.syncedAt ?? null,
+    deletedAt: state.deletedAt ?? null,
   });
 
   return {

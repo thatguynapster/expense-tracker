@@ -36,6 +36,18 @@ const genId = (): string =>
   Date.now().toString(36) + Math.random().toString(36).substring(2, 9);
 const now = (): string => new Date().toISOString();
 
+/**
+ * Serializes syncNow() runs so at most one push is ever in flight. Without
+ * this, two mutations fired close together each start their own collect
+ * -> push -> applyPushResult cycle concurrently; a record edited (making it
+ * dirty again) after the first cycle already collected it but before that
+ * cycle's applyPushResult runs gets stamped synced by id match even though
+ * the edit itself was never sent. Chaining onto the previous run's promise
+ * closes that window: the next syncNow only starts collecting once the
+ * prior push has fully applied its result.
+ */
+let syncChain: Promise<void> = Promise.resolve();
+
 export interface AddIncomeParams {
   amount: number;
   spendableAccountId: string;
@@ -1155,14 +1167,23 @@ export const useStore = create<AppStore>((set, get) => ({
   },
 
   syncNow: async () => {
-    const payload = collectDirtyRecords(get());
-    if (!hasDirtyRecords(payload)) return;
+    const run = async () => {
+      const payload = collectDirtyRecords(get());
+      if (!hasDirtyRecords(payload)) return;
 
-    const success = await pushToServer(payload);
-    if (!success) return;
+      const success = await pushToServer(payload);
+      if (!success) return;
 
-    const updated = applyPushResult(get(), payload, now());
-    set(updated);
-    await persist({ ...get(), ...updated });
+      const updated = applyPushResult(get(), payload, now());
+      set(updated);
+      await persist({ ...get(), ...updated });
+    };
+
+    // Chain onto the previous run rather than replacing it, and swallow its
+    // rejection so one failed push doesn't wedge the chain for every sync
+    // after it.
+    const next = syncChain.catch(() => {}).then(run);
+    syncChain = next;
+    return next;
   },
 }));

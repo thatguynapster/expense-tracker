@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { Alert, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { router, useLocalSearchParams } from 'expo-router';
@@ -22,6 +22,7 @@ import { useStore } from '@/store/useStore';
 import { formatCurrency } from '@/utils/format';
 import { sortAccounts, sortCategoriesAlphabetically } from '@/utils/sorting';
 import { KeyboardAwareScrollViewCompat } from '@/components/KeyboardAwareScrollViewCompat';
+import type { Transaction } from '@/lib/types';
 
 type TxType = 'expense' | 'income' | 'transfer';
 
@@ -37,10 +38,44 @@ function dateToStr(date: Date): string {
   return `${y}-${m}-${d}`;
 }
 
+/**
+ * Adjustments have their own screen (add-adjustment.tsx). Loan
+ * disbursements/repayments (and a repayment's onward transfer leg,
+ * recognizable by loanPaymentId even though its type is plain 'transfer')
+ * are managed entirely from the Loans tab. An income's forced-savings
+ * transfer leg (recognizable by incomeTransactionId, also plain 'transfer')
+ * is managed by editing/deleting the income transaction it split off from.
+ * None of these are editable here — this form only ever loads
+ * expense/income/transfer.
+ */
+type EditableTransaction = Transaction & { type: 'expense' | 'income' | 'transfer' };
+
+function isEditableHere(t: Transaction): t is EditableTransaction {
+  return (
+    (t.type === 'expense' || t.type === 'income' || t.type === 'transfer') &&
+    !t.loanPaymentId &&
+    !t.incomeTransactionId
+  );
+}
+
 export default function AddTransactionScreen() {
+  const { id } = useLocalSearchParams<{ id?: string }>();
+  const transactions = useStore((s) => s.transactions);
+  const rawExisting = transactions.find((t) => t.id === id && !t.deletedAt);
+  const existing = rawExisting && isEditableHere(rawExisting) ? rawExisting : undefined;
+
+  // Keyed on the transaction's id (falling back to a constant for the
+  // add-new case) so that once async storage hydration resolves `existing`
+  // — it's undefined for one render while the store is still loading — the
+  // form remounts and its lazy useState initializers below pick up the
+  // loaded record, instead of needing an effect to push state in after the
+  // fact.
+  return <AddTransactionForm key={existing?.id ?? 'new'} id={id} existing={existing} />;
+}
+
+function AddTransactionForm({ id, existing }: { id?: string; existing?: EditableTransaction }) {
   const insets = useSafeAreaInsets();
   const isWeb = Platform.OS === 'web';
-  const { id } = useLocalSearchParams<{ id?: string }>();
   const isEditing = !!id;
   const accounts = sortAccounts(useStore((s) => s.accounts).filter((a) => !a.deletedAt));
   // Soft-deleted categories stay in local storage until sync purges them —
@@ -49,8 +84,6 @@ export default function AddTransactionScreen() {
   const activeCategories = useStore((s) => s.categories).filter((c) => !c.deletedAt);
   const expenseCategories = sortCategoriesAlphabetically(activeCategories.filter((c) => c.type === 'expense'));
   const incomeCategories = sortCategoriesAlphabetically(activeCategories.filter((c) => c.type === 'income'));
-  const transactions = useStore((s) => s.transactions);
-  const existing = transactions.find((t) => t.id === id && !t.deletedAt);
   const addIncome = useStore((s) => s.addIncome);
   const addExpense = useStore((s) => s.addExpense);
   const addTransfer = useStore((s) => s.addTransfer);
@@ -59,64 +92,31 @@ export default function AddTransactionScreen() {
   const updateTransfer = useStore((s) => s.updateTransfer);
   const disciplineDebt = useStore((s) => s.getDisciplineDebt)();
 
-  const [txType, setTxType] = useState<TxType>('expense');
-  const [amount, setAmount] = useState('');
-  const [note, setNote] = useState('');
-  const [date, setDate] = useState(new Date());
+  const existingExpense = existing?.type === 'expense' ? existing : undefined;
+  const existingIncome = existing?.type === 'income' ? existing : undefined;
+  const existingTransfer = existing?.type === 'transfer' ? existing : undefined;
+
+  const [txType, setTxType] = useState<TxType>(existing?.type ?? 'expense');
+  const [amount, setAmount] = useState(existing ? String(existing.amount) : '');
+  const [note, setNote] = useState(existing?.note ?? '');
+  const [date, setDate] = useState(() => (existing ? parseLocalDate(existing.date.split('T')[0]!) : new Date()));
   const [saving, setSaving] = useState(false);
 
   // Expense fields
-  const [expAccountId, setExpAccountId] = useState('');
-  const [expCategoryId, setExpCategoryId] = useState('');
+  const [expAccountId, setExpAccountId] = useState(existingExpense?.fromAccountId ?? '');
+  const [expCategoryId, setExpCategoryId] = useState(existingExpense?.categoryId ?? '');
 
   // Income fields
-  const [incSpendableId, setIncSpendableId] = useState('');
-  const [incProtectedId, setIncProtectedId] = useState('');
-  const [incCategoryId, setIncCategoryId] = useState('');
-  const [savingsAmount, setSavingsAmount] = useState('');
+  const [incSpendableId, setIncSpendableId] = useState(existingIncome?.toAccountId ?? '');
+  const [incProtectedId, setIncProtectedId] = useState(existingIncome?.savingsAccountId ?? '');
+  const [incCategoryId, setIncCategoryId] = useState(existingIncome?.categoryId ?? '');
+  const [savingsAmount, setSavingsAmount] = useState(String(existingIncome?.savingsAmount ?? ''));
 
   // Transfer fields
-  const [fromAccountId, setFromAccountId] = useState('');
-  const [toAccountId, setToAccountId] = useState('');
-  const [reason, setReason] = useState('');
-  const [countsAsDebt, setCountsAsDebt] = useState(false);
-
-  useEffect(() => {
-    // Adjustments have their own screen (add-adjustment.tsx). Loan
-    // disbursements/repayments (and a repayment's onward transfer leg,
-    // recognizable by loanPaymentId even though its type is plain
-    // 'transfer') are managed entirely from the Loans tab. An income's
-    // forced-savings transfer leg (recognizable by incomeTransactionId,
-    // also plain 'transfer') is managed by editing/deleting the income
-    // transaction it split off from. None of these are editable here —
-    // this form only ever loads expense/income/transfer.
-    if (
-      !existing ||
-      existing.type === 'adjustment' ||
-      existing.type === 'loan_disbursement' ||
-      existing.type === 'loan_repayment' ||
-      existing.loanPaymentId ||
-      existing.incomeTransactionId
-    ) return;
-    setTxType(existing.type);
-    setAmount(String(existing.amount));
-    setNote(existing.note ?? '');
-    setDate(parseLocalDate(existing.date.split('T')[0]!));
-    if (existing.type === 'expense') {
-      setExpAccountId(existing.fromAccountId ?? '');
-      setExpCategoryId(existing.categoryId ?? '');
-    } else if (existing.type === 'income') {
-      setIncSpendableId(existing.toAccountId ?? '');
-      setIncProtectedId(existing.savingsAccountId ?? '');
-      setIncCategoryId(existing.categoryId ?? '');
-      setSavingsAmount(String(existing.savingsAmount ?? ''));
-    } else {
-      setFromAccountId(existing.fromAccountId ?? '');
-      setToAccountId(existing.toAccountId ?? '');
-      setReason(existing.reason ?? '');
-      setCountsAsDebt(existing.countsAsDebtRepayment ?? false);
-    }
-  }, [existing?.id]);
+  const [fromAccountId, setFromAccountId] = useState(existingTransfer?.fromAccountId ?? '');
+  const [toAccountId, setToAccountId] = useState(existingTransfer?.toAccountId ?? '');
+  const [reason, setReason] = useState(existingTransfer?.reason ?? '');
+  const [countsAsDebt, setCountsAsDebt] = useState(existingTransfer?.countsAsDebtRepayment ?? false);
 
   const spendableAccounts = accounts.filter((a) => a.type === 'spendable');
   const protectedAccounts = accounts.filter((a) => a.type === 'protected');

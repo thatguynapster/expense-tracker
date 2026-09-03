@@ -59,7 +59,7 @@ describe('calculateSafeToSpendToday', () => {
     expect(metrics.safeToSpendToday).toBe(-50);
   });
 
-  it("income received today doesn't inflate today's budget", () => {
+  it("income received today immediately inflates today's budget", () => {
     // Balance already reflects GHS 100 of income received today.
     const accounts = [account({ id: 'acc_main', balance: 1100 })];
     const transactions = [
@@ -72,9 +72,28 @@ describe('calculateSafeToSpendToday', () => {
       }),
     ];
     const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
-    expect(metrics.dailyBudget).toBe(100); // (1100 - 100 reversed) / 10 — income excluded
+    expect(metrics.dailyBudget).toBe(110); // 1100 / 10 — today's income counts right away
     expect(metrics.spentToday).toBe(0);
-    expect(metrics.safeToSpendToday).toBe(100);
+    expect(metrics.safeToSpendToday).toBe(110);
+  });
+
+  it("today's spending still gets frozen out even when income arrived today too", () => {
+    // Balance already reflects +500 income and -100 spending made today.
+    const accounts = [account({ id: 'acc_main', balance: 1400 })];
+    const transactions = [
+      reversalTransaction({
+        type: 'income',
+        date: '2026-01-22T08:00:00.000Z',
+        amount: 500,
+        fromAccountId: null,
+        toAccountId: 'acc_main',
+      }),
+      reversalTransaction({ date: '2026-01-22T09:00:00.000Z', amount: 100, fromAccountId: 'acc_main' }),
+    ];
+    const metrics = calculateSafeToSpendToday(accounts, transactions, null, today);
+    expect(metrics.dailyBudget).toBe(150); // (1400 + 100 spending reversed) / 10 — income kept, spending frozen
+    expect(metrics.spentToday).toBe(100);
+    expect(metrics.safeToSpendToday).toBe(50);
   });
 
   it("a transfer between two spendable accounts today isn't spending", () => {

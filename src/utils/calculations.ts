@@ -111,16 +111,21 @@ export function calculateSafeToSpendToday(
   const todaysTransactions = transactions.filter((t) => !t.deletedAt && t.date.startsWith(todayStr));
 
   // Reconstructs this morning's usable balance by reversing today's
-  // transactions' effect on spendable accounts, so the daily budget stays
-  // fixed all day instead of getting re-averaged down every time something
-  // is spent (that re-averaging was the bug: spending GHS 30 with 10 days
-  // left in the month only used to move "safe to spend today" by GHS 3).
+  // *spending* out of spendable accounts, so the daily budget stays fixed
+  // all day instead of getting re-averaged down every time something is
+  // spent (that re-averaging was the bug: spending GHS 30 with 10 days left
+  // in the month only used to move "safe to spend today" by GHS 3). Only
+  // decreases are reversed (Math.max(spendableDelta, 0) keeps just the
+  // positive, add-it-back reversals) — an increase today (income, a
+  // savings withdrawal) already shows up in `usableBalance` and must count
+  // toward today's budget immediately, not get silently cancelled out and
+  // wait until tomorrow to appear.
   const reversedToStartOfDay = todaysTransactions.reduce((sum, t) => {
     const { accountDeltas } = getTransactionReversal(t, accounts);
     const spendableDelta = accountDeltas
       .filter((a) => spendableIds.has(a.accountId))
       .reduce((s, a) => s + a.delta, 0);
-    return sum + spendableDelta;
+    return sum + Math.max(spendableDelta, 0);
   }, 0);
   const startOfDayUsableBalance = usableBalance + reversedToStartOfDay;
 
